@@ -10,6 +10,9 @@ import XCTest
 /// TouchTrace（DSH_TOUCH_TRACE=1）可把延迟拆成
 ///   触摸抬起 → 按钮 action → sheet 出现 / 关闭请求 → sheet 消失
 /// 三段，慢在哪一段一目了然。
+///
+/// 注意：CI 上测试失败就是真失败（工作流已修掉 `|| true` 吞退出码的问题），
+/// 诊断期关注 METRIC 行与 artifact 里的 app.log。
 final class SheetCloseLatencyUITests: XCTestCase {
     // 失败要快：CI 上一轮"没出现"能省 90 秒（原来各 60s）。正常路径是 100ms 量级，
     // 15s 已经给了 150 倍余量；真慢到 15s 以上，无论如何都要单独诊断。
