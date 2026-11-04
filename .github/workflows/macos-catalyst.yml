@@ -16,7 +16,9 @@ concurrency:
 
 jobs:
   catalyst-ui-test:
-    runs-on: macos-15
+    # xcode-27 预览镜像：macOS 27.0.1 + Xcode 27.2 RC（iOS/macOS 27.2 SDK），
+    # 与本机开发环境一致；macos-15 的 Xcode 26.3 没有 iOS 27.1 SDK，构建必失败。
+    runs-on: xcode-27
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
