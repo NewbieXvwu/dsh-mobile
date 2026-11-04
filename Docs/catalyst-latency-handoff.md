@@ -96,7 +96,7 @@ gh run download <runId> --repo NewbieXvwu/dsh-mobile -n xcresult -D /tmp/ci-xcre
 
 工作流做的事：选最新 Xcode → JDK17 → 恢复 KMP 产物缓存 → 判断 Kotlin 是否需要重编 → （必要时）恢复 Kotlin/Native 工具链缓存 → Metal 工具链探针 → 回拨源文件 mtime → 恢复 DerivedData → `build-for-testing`（`CODE_SIGNING_ALLOWED=NO`）→ ad-hoc 签名 → `log stream` 后跑 `test-without-building -only-testing:DeepSeekHarnessMobileUITests/SheetCloseLatencyUITests` → 打印 `METRIC:` 行与 app 时间线 → 上传 artifact。
 
-**迭代速度（已实测，改动前一轮 9m30s / 构建 7m01s → 现在一轮约 3m50s / 构建约 1m50s）**：
+**迭代速度（实测：改动前一轮 9m30s / 构建 7m01s → 现在一轮 3–4 分钟 / 构建 50s–1m50s；只改 Swift 时最快 3m06s）**：
 
 | 优化 | 做法 | 效果 |
 |---|---|---|
