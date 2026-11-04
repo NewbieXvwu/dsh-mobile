@@ -27,6 +27,12 @@ trap 'rm -rf "$work"' EXIT
 cp "$BIN" "$work/in.ar"
 (cd "$work" && ar x in.ar)
 
+# 幂等标记：stub 对象若已在归档里，说明这个 framework 之前已经被打过补丁
+# （CI 缓存/增量构建会直接复用已 patch 的产物），此时不能再注入一份，
+# 否则会出现重复符号。平台改写本身是幂等的（只见 platform=macOS 才改）。
+stub_present=0
+[ -f "$work/dsh_sqlite3_legacy_stubs.o" ] && stub_present=1
+
 patched=0
 for obj in "$work"/*.o; do
   [ -f "$obj" ] || continue
@@ -65,6 +71,11 @@ PYEOF
     patched=$((patched + 1))
   fi
 done
+
+if [ "$stub_present" -eq 1 ] && [ "$patched" -eq 0 ]; then
+  echo "[patch-kmp-maccatalyst] already patched; skip rebuild" >&2
+  exit 0
+fi
 
 # macOS 的 libsqlite3 导出表缺失一批弃用 API（iOS 仍在），而 K/N 的
 # sqlite-framework cinterop 成员被拉入链接时会全量引用它们。注入一个

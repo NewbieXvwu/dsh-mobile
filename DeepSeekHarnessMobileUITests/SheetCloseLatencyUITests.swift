@@ -11,8 +11,10 @@ import XCTest
 ///   触摸抬起 → 按钮 action → sheet 出现 / 关闭请求 → sheet 消失
 /// 三段，慢在哪一段一目了然。
 final class SheetCloseLatencyUITests: XCTestCase {
-    private let openTimeout: TimeInterval = 60
-    private let closeTimeout: TimeInterval = 60
+    // 失败要快：CI 上一轮"没出现"能省 90 秒（原来各 60s）。正常路径是 100ms 量级，
+    // 15s 已经给了 150 倍余量；真慢到 15s 以上，无论如何都要单独诊断。
+    private let openTimeout: TimeInterval = 15
+    private let closeTimeout: TimeInterval = 15
 
     override func setUp() {
         continueAfterFailure = false
@@ -48,7 +50,7 @@ final class SheetCloseLatencyUITests: XCTestCase {
         let switcher = app.buttons
             .matching(NSPredicate(format: "label CONTAINS %@", "切换主机"))
             .firstMatch
-        XCTAssertTrue(switcher.waitForExistence(timeout: 60), "主界面应有切换主机入口")
+        XCTAssertTrue(switcher.waitForExistence(timeout: 30), "主界面应有切换主机入口")
         attach(app, name: "01-启动后")
 
         // 关闭按钮由 macSheetClose 注入，只在 sheet 存在时出现；

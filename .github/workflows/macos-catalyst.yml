@@ -4,6 +4,13 @@ name: macos-catalyst
 # 本机（无密码账户）无法初始化 testmanagerd，因此在 GitHub 托管的 macOS
 # runner 上跑：那里有正常的测试账户环境，XCUITest 的点击走真实事件管线，
 # 能复现"点关闭要几秒"的人工路径。
+#
+# 调试期每 push 一次就跑一轮，所以做了三层缓存 + 失败要快：
+#   - ~/.konan + gradle 依赖：按工具链版本缓存（不缓存时每次要重新下载 2-4 分钟）
+#   - .gradle + shared/build：按 shared/ 源码哈希缓存；Swift 改动只 relink（秒级）
+#   - DerivedData 滚动缓存：Swift 增量编译
+#   - UI 测试 open/close 超时各 15s，打开失败立即返回
+# 预期：冷启动 8-10 分钟，命中缓存 2-3 分钟。
 
 on:
   workflow_dispatch:
@@ -19,7 +26,7 @@ jobs:
     # xcode-27 预览镜像：macOS 27.0.1 + Xcode 27.2 RC（iOS/macOS 27.2 SDK），
     # 与本机开发环境一致；macos-15 的 Xcode 26.3 没有 iOS 27.1 SDK，构建必失败。
     runs-on: xcode-27
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -42,15 +49,64 @@ jobs:
           echo "ANDROID_HOME=${ANDROID_HOME:-unset} ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
           ls "$HOME/Library/Android/sdk" 2>/dev/null | head -6 || true
 
+      - name: Configure Gradle for CI
+        run: |
+          mkdir -p "$HOME/.gradle"
+          cat >> "$HOME/.gradle/gradle.properties" <<'EOF'
+          org.gradle.caching=true
+          org.gradle.parallel=true
+          org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g
+          EOF
+
+      # Kotlin/Native 编译器 + LLVM/sysroot 依赖（~1.5G）与 Gradle 依赖缓存。
+      - name: Restore Kotlin/Native + Gradle caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.konan
+            ~/.gradle/wrapper/dists
+            ~/.gradle/caches/modules-2
+            ~/.gradle/caches/build-cache-1
+          key: kmp-toolchain-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml', 'build.gradle.kts') }}
+          restore-keys: |
+            kmp-toolchain-${{ runner.os }}-
+
+      # KMP 编译产物：只改 Swift 时这里命中，gradle 只需 relink 而不是重编 Kotlin。
+      - name: Restore KMP build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            .gradle
+            shared/build
+          key: kmp-out-${{ runner.os }}-${{ hashFiles('shared/**/*.kt', 'shared/**/*.kts', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            kmp-out-${{ runner.os }}-
+
       - name: Install Metal toolchain
         run: |
           # 预览镜像默认不带 Metal Toolchain，而 shader 编译走 metal 前端。
-          xcodebuild -downloadComponent MetalToolchain 2>&1 | tail -5
+          # 镜像若已自带则跳过下载。
+          if xcrun -f metal >/dev/null 2>&1; then
+            echo "Metal toolchain already present"
+          else
+            xcodebuild -downloadComponent MetalToolchain 2>&1 | tail -5
+          fi
           xcrun -f metal && metal --version | head -2
+
+      # 滚动缓存：每次保存一份新的 DerivedData，下次 restore 最近一份。
+      # 命中时 xcodebuild 只重编改动过的 Swift 文件（SPM 包也一并复用）。
+      - name: Restore DerivedData (rolling)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/dd/Build
+            ${{ runner.temp }}/dd/SourcePackages
+          key: dd-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            dd-${{ runner.os }}-
 
       - name: Build for testing (Mac Catalyst)
         run: |
-          set -o pipefail
           xcodebuild \
             -project DeepSeekHarnessMobile.xcodeproj \
             -scheme DeepSeekHarnessMobile \
@@ -59,14 +115,23 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/dd" \
             -scmProvider system \
             build-for-testing \
+            -showBuildTimingSummary \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY= \
             CODE_SIGN_ENTITLEMENTS= \
             DEVELOPMENT_TEAM= \
-            2>&1 | tee "$RUNNER_TEMP/build.log" | grep -E "BUILD (SUCCEEDED|FAILED)|error:" || true
-          grep -q "BUILD SUCCEEDED" "$RUNNER_TEMP/build.log"
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            > "$RUNNER_TEMP/build.log" 2>&1 || true
+          grep -E "BUILD (SUCCEEDED|FAILED)" "$RUNNER_TEMP/build.log" || true
+          if ! grep -q "BUILD SUCCEEDED" "$RUNNER_TEMP/build.log"; then
+            echo "==== build errors ===="
+            grep -E "error:|fatal error|The following build commands failed" -A3 "$RUNNER_TEMP/build.log" | head -80 || true
+            tail -40 "$RUNNER_TEMP/build.log"
+            exit 1
+          fi
+          sed -n '/Build Timing Summary/,/^$/p' "$RUNNER_TEMP/build.log" | head -30 || true
 
       - name: Ad-hoc sign testable products
         run: |
@@ -80,13 +145,12 @@ jobs:
 
       - name: Run sheet latency UI test
         run: |
-          set -o pipefail
+          set -uo pipefail
           # app 在测试进程之外：实时抓 unified log（TouchTrace/SheetSelfTest）
           log stream --style compact --level debug \
             --predicate 'subsystem == "com.clarklevis.dshmobile"' \
             > "$RUNNER_TEMP/app.log" 2>&1 &
           LOG_PID=$!
-          set +e
           xcodebuild \
             -project DeepSeekHarnessMobile.xcodeproj \
             -scheme DeepSeekHarnessMobile \
@@ -102,11 +166,18 @@ jobs:
             CODE_SIGN_IDENTITY= \
             CODE_SIGN_ENTITLEMENTS= \
             DEVELOPMENT_TEAM= \
-            2>&1 | tee "$RUNNER_TEMP/test.log" | grep -E "METRIC:|Test Case|error:|TEST (SUCCEEDED|FAILED)" || true
+            > "$RUNNER_TEMP/test.log" 2>&1
           RC=$?
           kill $LOG_PID 2>/dev/null
+          # 只把关键行打到日志里，完整日志进 artifact
+          grep -E "METRIC:|Test Case|error:.*failed|TEST (SUCCEEDED|FAILED)|Failed to" \
+            "$RUNNER_TEMP/test.log" | head -80 || true
           echo "==== app timeline ===="
           grep -E "TouchTrace|SheetSelfTest|MacSheetClose" "$RUNNER_TEMP/app.log" | tail -60 || true
+          if [ "$RC" -ne 0 ]; then
+            echo "==== failure context ===="
+            grep -E "METRIC: hierarchy" -A60 "$RUNNER_TEMP/test.log" | head -80 || true
+          fi
           exit $RC
 
       - name: Dump app diagnostics timeline
