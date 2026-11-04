@@ -42,6 +42,12 @@ jobs:
           echo "ANDROID_HOME=${ANDROID_HOME:-unset} ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
           ls "$HOME/Library/Android/sdk" 2>/dev/null | head -6 || true
 
+      - name: Install Metal toolchain
+        run: |
+          # 预览镜像默认不带 Metal Toolchain，而 shader 编译走 metal 前端。
+          xcodebuild -downloadComponent MetalToolchain 2>&1 | tail -5
+          xcrun -f metal && metal --version | head -2
+
       - name: Build for testing (Mac Catalyst)
         run: |
           set -o pipefail
