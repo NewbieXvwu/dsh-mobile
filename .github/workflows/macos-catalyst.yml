@@ -58,21 +58,7 @@ jobs:
           org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g
           EOF
 
-      # Kotlin/Native 编译器 + LLVM/sysroot 依赖（~1.5G）与 Gradle 依赖缓存。
-      - name: Restore Kotlin/Native + Gradle caches
-        id: kmp-toolchain
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.konan
-            ~/.gradle/wrapper/dists
-            ~/.gradle/caches/modules-2
-            ~/.gradle/caches/build-cache-1
-          key: kmp-toolchain-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml', 'build.gradle.kts') }}
-          restore-keys: |
-            kmp-toolchain-${{ runner.os }}-
-
-      # KMP 编译产物：只改 Swift 时这里命中，gradle 只需 relink 而不是重编 Kotlin。
+      # KMP 编译产物：只改 Swift 时这里命中，gradle 完全不用跑。
       - name: Restore KMP build outputs
         id: kmp-out
         uses: actions/cache/restore@v4
@@ -87,13 +73,49 @@ jobs:
           restore-keys: |
             kmp-out-${{ runner.os }}-
 
+      # 恢复出来的 stamp 和当前源码哈希一致 → 本次 gradle 不会跑，
+      # 也就不必再花 ~35s 解压 1.2G 的 Kotlin/Native 工具链缓存。
+      - name: Check Kotlin inputs
+        id: kmpcheck
+        run: |
+          hash=$(scripts/kmp_input_hash.sh "$PWD")
+          stamp="shared/build/.kmp-input-stamp-macosarm64-debug"
+          fw="shared/build/bin/macosArm64/debugFramework/DeepSeekHarnessShared.framework/Versions/A/DeepSeekHarnessShared"
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$hash" ] && [ -f "$fw" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Kotlin inputs unchanged; Kotlin/Native toolchain not needed"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Kotlin inputs changed or framework missing; toolchain needed"
+          fi
+
+      # Kotlin/Native 编译器 + LLVM/sysroot 依赖（~1.5G）与 Gradle 依赖缓存。
+      - name: Restore Kotlin/Native + Gradle caches
+        id: kmp-toolchain
+        if: steps.kmpcheck.outputs.skip != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.konan
+            ~/.gradle/wrapper/dists
+            ~/.gradle/caches/modules-2
+            ~/.gradle/caches/build-cache-1
+          key: kmp-toolchain-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml', 'build.gradle.kts') }}
+          restore-keys: |
+            kmp-toolchain-${{ runner.os }}-
+
       - name: Install Metal toolchain
         run: |
-          # 预览镜像默认不带 Metal Toolchain 组件，而 shader 编译走 metal 前端。
-          # 注意 xcrun -f metal 在只装了 CLI 壳、缺组件时也会返回路径并成功，
-          # 所以不能用它判断，直接跑 download（已安装时很快返回）。
-          xcodebuild -downloadComponent MetalToolchain 2>&1 | tail -5
-          xcrun -f metal && metal --version | head -2
+          # 预览镜像默认不带 Metal Toolchain 组件。xcrun -f metal 在缺组件时
+          # 仍会打印一个 cryptex 路径并返回 0，必须再看该文件是否真的存在。
+          metal_bin=$(xcrun -f metal 2>/dev/null || true)
+          if [ -n "$metal_bin" ] && [ -x "$metal_bin" ]; then
+            echo "Metal toolchain present: $metal_bin"
+          else
+            xcodebuild -downloadComponent MetalToolchain 2>&1 | tail -5
+          fi
+          metal --version | head -2
 
       # 滚动缓存：每次保存一份新的 DerivedData，下次 restore 最近一份。
       # 命中时 xcodebuild 只重编改动过的 Swift 文件（SPM 包也一并复用）。
@@ -219,7 +241,7 @@ jobs:
 
       # 诊断期测试本来就会红，缓存必须在失败时也保存，否则永远冷启动。
       - name: Save Kotlin/Native + Gradle caches
-        if: always() && steps.kmp-toolchain.outputs.cache-hit != 'true'
+        if: always() && steps.kmpcheck.outputs.skip != 'true' && steps.kmp-toolchain.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |

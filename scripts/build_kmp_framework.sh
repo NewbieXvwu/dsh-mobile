@@ -38,21 +38,7 @@ STAMP_DIR="$PWD/shared/build"
 STAMP="$STAMP_DIR/.kmp-input-stamp-$(echo "$KMP_TARGET" | tr '[:upper:]' '[:lower:]')-$(echo "$KMP_BUILD_TYPE" | tr '[:upper:]' '[:lower:]')"
 FRAMEWORK_BIN="${KMP_FRAMEWORK_DIR:+$KMP_FRAMEWORK_DIR/DeepSeekHarnessShared.framework/Versions/A/DeepSeekHarnessShared}"
 
-# Hash everything that can change the linked framework. `shared/build` is the
-# output directory, so it is pruned; `shared/` still covers sources, the module
-# build script and proguard rules.
-input_hash() {
-  {
-    find "$PWD/shared" -path "$PWD/shared/build" -prune -o -type f -print
-    find "$PWD/gradle" -type f -print 2>/dev/null || true
-    for f in build.gradle.kts settings.gradle.kts gradle.properties \
-             scripts/patch_kmp_framework_maccatalyst.sh; do
-      [ -f "$PWD/$f" ] && printf '%s\n' "$PWD/$f"
-    done
-  } | LC_ALL=C sort | xargs shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1
-}
-
-current_hash=$(input_hash)
+current_hash=$("$PWD/scripts/kmp_input_hash.sh" "$PWD")
 
 if [ -f "$STAMP" ] && [ "$(cat "$STAMP" 2>/dev/null || true)" = "$current_hash" ] \
    && { [ -z "$FRAMEWORK_BIN" ] || [ -f "$FRAMEWORK_BIN" ]; }; then
