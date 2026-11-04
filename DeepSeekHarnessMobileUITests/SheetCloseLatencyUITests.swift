@@ -5,8 +5,8 @@ import XCTest
 /// 为什么在 CI 跑：本机账户没有密码，testmanagerd 初始化失败
 /// （LocalAuthentication -5），XCUITest 无法启动；托管 runner 环境正常。
 ///
-/// 测的是什么：XCUIElement.tap() 走 testmanagerd 的真实事件注入路径
-/// （不是 AXPress），与人工点击同一条 UIKit 事件管线。配合 app 内的
+/// Catalyst 使用 XCUIElement.click() 注入鼠标事件，iOS 使用 tap()。
+/// 配合 app 内的
 /// TouchTrace（DSH_TOUCH_TRACE=1）可把延迟拆成
 ///   触摸抬起 → 按钮 action → sheet 出现 / 关闭请求 → sheet 消失
 /// 三段，慢在哪一段一目了然。
@@ -24,6 +24,14 @@ final class SheetCloseLatencyUITests: XCTestCase {
     }
 
     private func ms(_ from: Date) -> Int { Int(Date().timeIntervalSince(from) * 1000) }
+
+    private func activate(_ element: XCUIElement) {
+#if targetEnvironment(macCatalyst)
+        element.click()
+#else
+        element.tap()
+#endif
+    }
 
     /// 轮询直到条件成立，返回耗时毫秒；超时返回 nil。
     private func waitFor(_ what: String, timeout: TimeInterval, _ condition: () -> Bool) -> Int? {
@@ -68,7 +76,7 @@ final class SheetCloseLatencyUITests: XCTestCase {
 
         // —— 打开 ——
         let clickStart = Date()
-        switcher.tap()
+        activate(switcher)
         print("METRIC: tap call=\(ms(clickStart))ms probe=\(probe.exists ? probe.label : "MISSING")")
         let openLatency = waitFor("sheet 出现", timeout: openTimeout, sheetPresented)
         print("METRIC: open=\(openLatency.map(String.init) ?? "TIMEOUT")ms")
@@ -82,7 +90,7 @@ final class SheetCloseLatencyUITests: XCTestCase {
         attach(app, name: "03-sheet已打开")
 
         // —— 关闭（真实点击右上角关闭按钮）——
-        closeButton.tap()
+        activate(closeButton)
         let closeLatency = waitFor("sheet 消失", timeout: closeTimeout) { !sheetPresented() }
         print("METRIC: close=\(closeLatency.map(String.init) ?? "TIMEOUT")ms")
         if closeLatency == nil {
@@ -93,13 +101,13 @@ final class SheetCloseLatencyUITests: XCTestCase {
         }
 
         // —— 第二轮：排除首启冷路径 ——
-        switcher.tap()
+        activate(switcher)
         let open2 = waitFor("sheet 第二次出现", timeout: openTimeout, sheetPresented)
         guard open2 != nil else {
             print("METRIC: cycle2 open=TIMEOUT")
             return
         }
-        closeButton.tap()
+        activate(closeButton)
         let close2 = waitFor("sheet 第二次消失", timeout: closeTimeout) { !sheetPresented() }
         print("METRIC: cycle2 open=\(open2!)ms close=\(close2.map(String.init) ?? "TIMEOUT")ms")
     }
