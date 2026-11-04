@@ -10,7 +10,8 @@ name: macos-catalyst
 #   - .gradle + shared/build：按 shared/ 源码哈希缓存；Swift 改动只 relink（秒级）
 #   - DerivedData 滚动缓存：Swift 增量编译
 #   - UI 测试 open/close 超时各 15s，打开失败立即返回
-# 预期：冷启动 8-10 分钟，命中缓存 2-3 分钟。
+# 实测：冷启动约 8-10 分钟；只改 Swift/文档一轮约 3 分 50 秒（构建 ~1 分 50 秒）；
+# 改到 Kotlin 源码时多一次 Gradle relink，约 7-8 分钟。
 
 on:
   workflow_dispatch:
