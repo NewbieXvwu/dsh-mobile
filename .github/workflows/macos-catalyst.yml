@@ -97,6 +97,15 @@ jobs:
 
       # 滚动缓存：每次保存一份新的 DerivedData，下次 restore 最近一份。
       # 命中时 xcodebuild 只重编改动过的 Swift 文件（SPM 包也一并复用）。
+      # 每次 checkout 出来的源文件 mtime 都是"现在"，比缓存里的产物新，
+      # Xcode 的增量判断因此把全部 Swift 文件当成改动过（实测每轮全量重编 ~120s）。
+      # 把源文件 mtime 压到很久以前，让恢复出来的产物显得更新。
+      - name: Normalize source mtimes for incremental builds
+        run: |
+          find . -path ./.git -prune -o -type f -print0 \
+            | xargs -0 touch -t 202001010101 2>/dev/null || true
+          echo "source files backdated"
+
       - name: Restore DerivedData (rolling)
         id: dd
         uses: actions/cache/restore@v4
