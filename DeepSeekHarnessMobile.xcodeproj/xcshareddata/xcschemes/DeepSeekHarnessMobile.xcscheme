@@ -41,16 +41,6 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "7515E0402B76392350DE0E00"
-               BuildableName = "DeepSeekHarnessMobileTests.xctest"
-               BlueprintName = "DeepSeekHarnessMobileTests"
-               ReferencedContainer = "container:DeepSeekHarnessMobile.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
                BlueprintIdentifier = "F2B000000000000000000005"
                BuildableName = "DeepSeekHarnessMobileUITests.xctest"
                BlueprintName = "DeepSeekHarnessMobileUITests"

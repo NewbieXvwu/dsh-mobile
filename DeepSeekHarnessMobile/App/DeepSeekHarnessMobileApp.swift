@@ -14,6 +14,7 @@ private final class AgentNotificationAppDelegate: NSObject, UIApplicationDelegat
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        TouchTrace.install()
         ChatCacheDiagnostics.shared.localLogWriter = { LocalAppLog.shared.write($0) }
         LocalAppLog.shared.write("INFO App started")
         _ = AgentUserNotificationManager.shared

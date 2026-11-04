@@ -1,0 +1,103 @@
+name: macos-catalyst
+
+# Mac Catalyst 构建 + sheet 点击延迟 UI 测试。
+# 本机（无密码账户）无法初始化 testmanagerd，因此在 GitHub 托管的 macOS
+# runner 上跑：那里有正常的测试账户环境，XCUITest 的点击走真实事件管线，
+# 能复现"点关闭要几秒"的人工路径。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ci/**", "feat/macos-catalyst"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  catalyst-ui-test:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          set -eu
+          latest=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Using $latest"
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+          xcodebuild -showsdks | grep -E "macosx|iphoneos" || true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK sanity
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-unset} ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+          ls "$HOME/Library/Android/sdk" 2>/dev/null | head -6 || true
+
+      - name: Build for testing (Mac Catalyst)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project DeepSeekHarnessMobile.xcodeproj \
+            -scheme DeepSeekHarnessMobile \
+            -configuration Debug \
+            -destination 'platform=macOS,variant=Mac Catalyst' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -scmProvider system \
+            build-for-testing \
+            ARCHS=arm64 \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
+            CODE_SIGN_ENTITLEMENTS= \
+            2>&1 | tee "$RUNNER_TEMP/build.log" | grep -E "BUILD (SUCCEEDED|FAILED)|error:" || true
+          grep -q "BUILD SUCCEEDED" "$RUNNER_TEMP/build.log"
+
+      - name: Run sheet latency UI test
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project DeepSeekHarnessMobile.xcodeproj \
+            -scheme DeepSeekHarnessMobile \
+            -configuration Debug \
+            -destination 'platform=macOS,variant=Mac Catalyst' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -scmProvider system \
+            -only-testing:DeepSeekHarnessMobileUITests/SheetCloseLatencyUITests \
+            test-without-building \
+            ARCHS=arm64 \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
+            CODE_SIGN_ENTITLEMENTS= \
+            2>&1 | tee "$RUNNER_TEMP/test.log" | grep -E "METRIC:|Test Case|error:|TEST (SUCCEEDED|FAILED)" || true
+
+      - name: Dump app diagnostics timeline
+        if: always()
+        run: |
+          echo "==== TouchTrace / SheetSelfTest / MacSheetClose ===="
+          log show --last 20m --style compact \
+            --predicate 'subsystem == "com.clarklevis.dshmobile"' 2>/dev/null \
+            | grep -E "TouchTrace|SheetSelfTest|MacSheetClose" | tail -300 || echo "(no app log)"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: catalyst-logs
+          path: |
+            ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/test.log
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xcresult
+          path: ${{ runner.temp }}/dd/Logs/Test/*.xcresult
+          if-no-files-found: warn

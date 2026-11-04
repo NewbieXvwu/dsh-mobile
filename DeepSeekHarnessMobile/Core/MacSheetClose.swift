@@ -4,6 +4,15 @@ import OSLog
 
 private let sheetCloseLog = Logger(subsystem: "com.clarklevis.dshmobile", category: "MacSheetClose")
 
+/// 无头自测/诊断开关：`open ... --args DSH_SHEET_SELFTEST 1` 启动时，
+/// sheet 打开/关闭的关键节点（open-request / appeared / close-request /
+/// disappeared）都会以 category=SheetSelfTest 打进 unified log，
+/// 用于离线定位 Catalyst sheet 的打开/关闭延迟，不依赖人工点击。
+enum SheetDiagnostics {
+    static let selfTestEnabled = ProcessInfo.processInfo.arguments.contains("DSH_SHEET_SELFTEST")
+    static let log = Logger(subsystem: "com.clarklevis.dshmobile", category: "SheetSelfTest")
+}
+
 // Mac Catalyst 的 sheet 没有下拉关闭手势，也没有系统提供的关闭按钮；
 // 只能靠手势关闭的 sheet 在 Mac 上是"陷阱"。本修饰器为 Catalyst 补：
 // 1) 右上角显式"关闭"按钮（topBarTrailing + Esc 快捷键）；关闭动作优先走

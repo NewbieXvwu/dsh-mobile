@@ -3,9 +3,13 @@ import SwiftUI
 struct GatewaySwitcherBar: View {
     @EnvironmentObject private var hosts: MultiGatewayStore
     @State private var showsHosts = false
+    @State private var sheetSelfTestStarted = false
 
     var body: some View {
-        Button { showsHosts = true } label: {
+        Button {
+            if TouchTrace.enabled { TouchTrace.log.fault("switcher-button-activated") }
+            showsHosts = true
+        } label: {
             HStack(spacing: 8) {
                 // 内嵌隧道的标记：只在开关打开时出现；未连上时叠一个转圈，连上后静止点亮。
                 TailscaleTunnelIndicator()
@@ -23,6 +27,20 @@ struct GatewaySwitcherBar: View {
             .overlay(Capsule().stroke(.white.opacity(0.14), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
+        .onAppear {
+            guard SheetDiagnostics.selfTestEnabled, !sheetSelfTestStarted else { return }
+            sheetSelfTestStarted = true
+            Task { @MainActor in
+                // 3s 后程序化开 sheet，再 8s 后程序化关，配合 appeared/disappeared
+                // 日志即可离线测出"状态切换→呈现/解散"各段耗时。
+                do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { return }
+                SheetDiagnostics.log.fault("selftest open-request")
+                showsHosts = true
+                do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
+                SheetDiagnostics.log.fault("selftest close-request")
+                showsHosts = false
+            }
+        }
         .accessibilityLabel("当前主机：\(hosts.activeProfile?.displayName ?? String(localized: "未选择"))，切换主机")
         .sheet(isPresented: $showsHosts) { GatewaySwitcherSheet(hosts: hosts, onClose: { showsHosts = false }) }
     }
@@ -214,6 +232,12 @@ struct GatewaySwitcherSheet: View {
         .tint(Color(uiColor: .label))
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .onAppear {
+            if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.log.fault("sheet appeared") }
+        }
+        .onDisappear {
+            if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.log.fault("sheet disappeared") }
+        }
     }
 
     private func toggleSelection(_ id: String) {
