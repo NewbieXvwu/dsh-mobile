@@ -728,7 +728,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -eu\ncd \"$SRCROOT\"\nif [ -z \"${ANDROID_HOME:-}\" ]; then\n  export ANDROID_HOME=\"${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}\"\nfi\ncase \"$CONFIGURATION\" in\n  *[Rr]elease*) KMP_BUILD_TYPE=Release ;;\n  *) KMP_BUILD_TYPE=Debug ;;\nesac\nif [ \"${EFFECTIVE_PLATFORM_NAME:-}\" = \"-maccatalyst\" ] || [ \"${PLATFORM_NAME:-}\" = \"macosx\" ]; then\n  KMP_TARGET=MacosArm64\n  KMP_FRAMEWORK_DIR=\"$SRCROOT/shared/build/bin/macosArm64/$(echo \"$KMP_BUILD_TYPE\" | tr '[:upper:]' '[:lower:]')Framework\"\nelif [ \"$PLATFORM_NAME\" = \"iphonesimulator\" ]; then\n  case \"$ARCHS\" in\n    *x86_64*) KMP_TARGET=IosX64 ;;\n    *) KMP_TARGET=IosSimulatorArm64 ;;\n  esac\nelse\n  KMP_TARGET=IosArm64\nfi\n\"$SRCROOT/gradlew\" \":shared:link${KMP_BUILD_TYPE}Framework${KMP_TARGET}\" --quiet\nif [ -n \"${KMP_FRAMEWORK_DIR:-}\" ]; then\n  \"$SRCROOT/scripts/patch_kmp_framework_maccatalyst.sh\" \"$KMP_FRAMEWORK_DIR/DeepSeekHarnessShared.framework/Versions/A/DeepSeekHarnessShared\" \"${IPHONEOS_DEPLOYMENT_TARGET:-16.1}\"\nfi\n";
+			shellScript = "set -eu\n\"$SRCROOT/scripts/build_kmp_framework.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 		AB0170000000000000000005 /* Build Metal Library */ = {
