@@ -52,12 +52,23 @@ jobs:
             -scmProvider system \
             build-for-testing \
             ARCHS=arm64 \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM= \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY= \
             CODE_SIGN_ENTITLEMENTS= \
+            DEVELOPMENT_TEAM= \
             2>&1 | tee "$RUNNER_TEMP/build.log" | grep -E "BUILD (SUCCEEDED|FAILED)|error:" || true
           grep -q "BUILD SUCCEEDED" "$RUNNER_TEMP/build.log"
+
+      - name: Ad-hoc sign testable products
+        run: |
+          set -eu
+          APP="$RUNNER_TEMP/dd/Build/Products/Debug-maccatalyst/DshMobile.app"
+          RUNNER="$RUNNER_TEMP/dd/Build/Products/Debug-maccatalyst/DeepSeekHarnessMobileUITests-Runner.app"
+          [ -d "$APP" ] || { echo "missing $APP"; ls "$RUNNER_TEMP/dd/Build/Products"; exit 1; }
+          codesign --force --deep --sign - "$APP"
+          if [ -d "$RUNNER" ]; then codesign --force --deep --sign - "$RUNNER"; fi
+          codesign --verify --deep "$APP" && echo SIGN_OK
 
       - name: Run sheet latency UI test
         run: |
@@ -72,10 +83,11 @@ jobs:
             -only-testing:DeepSeekHarnessMobileUITests/SheetCloseLatencyUITests \
             test-without-building \
             ARCHS=arm64 \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM= \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY= \
             CODE_SIGN_ENTITLEMENTS= \
+            DEVELOPMENT_TEAM= \
             2>&1 | tee "$RUNNER_TEMP/test.log" | grep -E "METRIC:|Test Case|error:|TEST (SUCCEEDED|FAILED)" || true
 
       - name: Dump app diagnostics timeline
