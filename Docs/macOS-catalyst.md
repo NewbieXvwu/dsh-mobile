@@ -12,7 +12,7 @@
 | app 可运行 | ✅ 欢迎页/会话页/设置均正常渲染（用户实测） |
 | 空闲 CPU（动态背景默认开） | ⚠️ ~22–23%（TimelineView 30fps + Metal 流体场 + Canvas 粒子） |
 | 空闲 CPU（设置里关闭动态背景后） | ✅ **0.0%**（headless A/B 实测） |
-| 主机弹层关闭 | Catalyst 改用窗口内 UIKit 模态面板，本机后台打开 18ms / 关闭 7ms，CI 鼠标回归待确认 |
+| 主机弹层关闭 | Catalyst 改用窗口内 UIKit 模态面板，本机两轮打开 20/11ms、关闭 6/5ms，CI 鼠标回归待确认 |
 
 ## 构建方法
 
@@ -93,11 +93,18 @@ xcodebuild -project DeepSeekHarnessMobile.xcodeproj -scheme DeepSeekHarnessMobil
 列表编辑、内层编辑弹层及删除确认保留，环境值随父视图更新。iOS 仍使用原来的
 `.sheet`，平台分支不改变其控件及动画。
 
-本机 `open -g` 后台自测测得打开约 18ms、关闭约 7ms。CI 回归测试使用真实鼠标
+本机 `open -g` 同一进程连续两轮后台自测测得打开 20/11ms、关闭 6/5ms。
+CI 回归测试使用真实鼠标
 `click()`，分别断言两轮打开与关闭都小于 100ms，计时取自应用探针的
 `tap → appeared` 和 `close → disappeared`。无障碍查询仅确认控件出现和消失，
 不参与延迟计算。常规回归移除了持续进程采样，截图单独导出至 `catalyst-logs`，
 便于直接检查面板布局。最终鼠标回归结果待本次 CI 完成后补入。
+
+验证运行 [41865405644](https://github.com/NewbieXvwu/dsh-mobile/actions/runs/41865405644)
+当前尚未分配执行机。此前运行 41853724338 等待约 15 分钟后以
+`The job was not acquired by Runner of type hosted even after multiple attempts` 失败，
+没有执行构建或测试。`xcode-27` 是唯一提供所需 SDK 的现有镜像，处于公开预览阶段。
+本机程序化结果不能代替 CI 的真实鼠标验收。
 
 这套呈现适配和鼠标事件选择属于 Catalyst 专用改动。可回馈上游的公共修复包括
 CI 保留源码真实时间戳，以及应用时间戳计时和第二轮超时失败的回归断言。

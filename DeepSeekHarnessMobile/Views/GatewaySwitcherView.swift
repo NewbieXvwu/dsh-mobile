@@ -54,15 +54,18 @@ struct GatewaySwitcherBar: View {
             guard SheetDiagnostics.selfTestEnabled, !sheetSelfTestStarted else { return }
             sheetSelfTestStarted = true
             Task { @MainActor in
-                // 3s 后程序化开 sheet，再 8s 后程序化关，配合 appeared/disappeared
-                // 日志即可离线测出"状态切换→呈现/解散"各段耗时。
+                // 连续两轮使用相同关闭入口，后台检查首次呈现及再次呈现。
                 do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { return }
-                SheetDiagnostics.log.fault("selftest open-request")
-                showsHosts = true
-                do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
-                SheetDiagnostics.log.fault("selftest close-request")
-                if let close = SheetDiagnostics.closeForSelfTest { close() }
-                else { showsHosts = false }
+                for cycle in 1...2 {
+                    SheetDiagnostics.log.fault("selftest open-request cycle=\(cycle)")
+                    SheetDiagnostics.record("selftest-open")
+                    showsHosts = true
+                    do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
+                    SheetDiagnostics.log.fault("selftest close-request cycle=\(cycle)")
+                    if let close = SheetDiagnostics.closeForSelfTest { close() }
+                    else { showsHosts = false }
+                    do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch { return }
+                }
             }
         }
         .accessibilityLabel("当前主机：\(hosts.activeProfile?.displayName ?? String(localized: "未选择"))，切换主机")
