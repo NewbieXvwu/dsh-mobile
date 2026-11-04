@@ -27,3 +27,5 @@ internal actual fun writeChatCacheLog(message: String, warning: Boolean) {
     // 避免可变参数跨 Kotlin/Objective-C 边界；转义格式字符后仅传入 format。
     NSLog(text.replace("%", "%%"))
 }
+
+// ci-cache-probe: touch a Kotlin input to exercise the Gradle path
