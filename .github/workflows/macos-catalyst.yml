@@ -80,7 +80,10 @@ jobs:
           path: |
             .gradle
             shared/build
-          key: kmp-out-${{ runner.os }}-${{ hashFiles('shared/**/*.kt', 'shared/**/*.kts', 'gradle/libs.versions.toml') }}
+          # rolling key: a cold Gradle link writes a new stamp/framework that
+          # has to be saved again, so the key must miss; prefix restore picks
+          # the newest entry.
+          key: kmp-out-${{ runner.os }}-${{ hashFiles('shared/**/*.kt', 'shared/**/*.kts', 'gradle/libs.versions.toml') }}-${{ github.run_id }}
           restore-keys: |
             kmp-out-${{ runner.os }}-
 
@@ -218,7 +221,7 @@ jobs:
           key: ${{ steps.kmp-toolchain.outputs.cache-primary-key }}
 
       - name: Save KMP build outputs
-        if: always() && steps.kmp-out.outputs.cache-hit != 'true'
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: |
