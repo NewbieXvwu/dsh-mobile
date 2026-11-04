@@ -65,6 +65,9 @@ struct GatewaySwitcherBar: View {
             }
         }
         .accessibilityLabel("当前主机：\(hosts.activeProfile?.displayName ?? String(localized: "未选择"))，切换主机")
+        .onChangeCompat(of: showsHosts) { _, presented in
+            SheetDiagnostics.record("presented=\(presented)")
+        }
         .sheet(isPresented: $showsHosts) { GatewaySwitcherSheet(hosts: hosts, onClose: { showsHosts = false }) }
     }
 }
@@ -253,7 +256,9 @@ struct GatewaySwitcherSheet: View {
         }
         .foregroundStyle(Color(uiColor: .label))
         .tint(Color(uiColor: .label))
+#if !targetEnvironment(macCatalyst)
         .presentationDetents([.medium, .large])
+#endif
         .presentationDragIndicator(.visible)
 #if targetEnvironment(macCatalyst)
         .safeAreaInset(edge: .bottom) { SheetTimingProbeLabel() }
