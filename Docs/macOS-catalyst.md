@@ -98,12 +98,13 @@ CI 回归测试使用真实鼠标
 `click()`，分别断言两轮打开与关闭都小于 100ms，计时取自应用探针的
 `tap → appeared` 和 `close → disappeared`。无障碍查询仅确认控件出现和消失，
 不参与延迟计算。常规回归移除了持续进程采样，截图单独导出至 `catalyst-logs`，
-便于直接检查面板布局。最终鼠标回归结果待本次 CI 完成后补入。
+便于直接检查面板布局。修复后的真实鼠标回归结果及面板截图尚未取得。
 
-验证运行 [41865405644](https://github.com/NewbieXvwu/dsh-mobile/actions/runs/41865405644)
-等待约 15 分钟后未分配到执行机并失败，与此前运行 41853724338 相同。后者以
-`The job was not acquired by Runner of type hosted even after multiple attempts` 失败，
-没有执行构建或测试。`xcode-27` 是唯一提供所需 SDK 的现有镜像，处于公开预览阶段。
+运行 41853724338、41865405644 和
+[41868186862](https://github.com/NewbieXvwu/dsh-mobile/actions/runs/41868186862)
+连续三轮等待约 15 分钟后均未分配到执行机。最新一轮的失败注解为
+`The job was not acquired by Runner of type hosted even after multiple attempts`，
+所有步骤未执行，产物数为零。`xcode-27` 是唯一提供所需 SDK 的现有镜像，处于公开预览阶段。
 本机程序化结果不能代替 CI 的真实鼠标验收。
 
 这套呈现适配和鼠标事件选择属于 Catalyst 专用改动。可回馈上游的公共修复包括
