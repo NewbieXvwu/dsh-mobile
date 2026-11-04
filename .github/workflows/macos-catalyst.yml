@@ -107,15 +107,19 @@ jobs:
 
       - name: Install Metal toolchain
         run: |
-          # 预览镜像默认不带 Metal Toolchain 组件。xcrun -f metal 在缺组件时
-          # 仍会打印一个 cryptex 路径并返回 0，必须再看该文件是否真的存在。
-          metal_bin=$(xcrun -f metal 2>/dev/null || true)
-          if [ -n "$metal_bin" ] && [ -x "$metal_bin" ]; then
-            echo "Metal toolchain present: $metal_bin"
+          # 预览镜像默认不带 Metal Toolchain 组件。xcrun -f metal / metal 壳子
+          # 在缺组件时依然"存在"且返回 0，只有真正编一个 .metal 才能判定。
+          probe="$RUNNER_TEMP/metal-probe.metal"
+          printf 'kernel void dsh_probe() {}\n' > "$probe"
+          if xcrun metal -c "$probe" -o "$RUNNER_TEMP/metal-probe.air" >/dev/null 2>&1; then
+            echo "Metal toolchain usable"
           else
+            echo "Metal toolchain missing; downloading component"
             xcodebuild -downloadComponent MetalToolchain 2>&1 | tail -5
+            xcrun metal -c "$probe" -o "$RUNNER_TEMP/metal-probe.air" >/dev/null 2>&1 \
+              || { echo "Metal toolchain still unusable"; exit 1; }
+            echo "Metal toolchain ready"
           fi
-          metal --version | head -2
 
       # 滚动缓存：每次保存一份新的 DerivedData，下次 restore 最近一份。
       # 命中时 xcodebuild 只重编改动过的 Swift 文件（SPM 包也一并复用）。
