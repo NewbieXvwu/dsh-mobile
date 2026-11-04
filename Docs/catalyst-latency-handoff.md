@@ -6,7 +6,9 @@
 
 ## 1. 仓库与环境
 
-- 工作目录：`~/dsh-mobile`，分支 `feat/macos-catalyst`，HEAD 应为 `84c3b24`（工作区干净）
+- 工作目录：`~/dsh-mobile`，当前分支 **`ci/probe`**（HEAD = `git log -1`；`feat/macos-catalyst` 指向同一份内容，两条分支都推在 fork 上）
+- 这份文档就是交接材料本身：`Docs/catalyst-latency-handoff.md`
+- 已就位的诊断基础设施（都在本分支）：`DeepSeekHarnessMobile/Core/TouchTrace.swift`（事件埋点）、`Core/MacSheetClose.swift` 里的 `SheetDiagnostics`（`DSH_SHEET_SELFTEST=1` 自测）、`DeepSeekHarnessMobileUITests/SheetCloseLatencyUITests.swift`（XCUITest + `METRIC:` 输出）、`.github/workflows/macos-catalyst.yml`（CI）
 - `origin` = 上游 `Clarklevis1995/dsh-mobile`（**禁止 push**，用户自行与上游沟通）
 - `fork` = `NewbieXvwu/dsh-mobile`（可以 push，CI 跑在这里）
 - 机器：macOS 27.0.1，Xcode 27.2（iOS/macOS 27.2 SDK），arm64
