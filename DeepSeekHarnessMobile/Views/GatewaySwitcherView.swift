@@ -5,7 +5,23 @@ struct GatewaySwitcherBar: View {
     @State private var showsHosts = false
     @State private var sheetSelfTestStarted = false
 
+    @ViewBuilder
     var body: some View {
+#if targetEnvironment(macCatalyst)
+        if TouchTrace.enabled {
+            VStack(alignment: .leading, spacing: 4) {
+                switcherButton
+                SheetTimingProbeLabel()
+            }
+        } else {
+            switcherButton
+        }
+#else
+        switcherButton
+#endif
+    }
+
+    private var switcherButton: some View {
         Button {
             SheetDiagnostics.record("tap")
             if TouchTrace.enabled { TouchTrace.log.fault("switcher-button-activated") }
@@ -28,9 +44,6 @@ struct GatewaySwitcherBar: View {
             .overlay(Capsule().stroke(.white.opacity(0.14), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .bottomLeading) {
-            SheetTimingProbeLabel().offset(y: 24)
-        }
         .task {
             guard TouchTrace.enabled else { return }
             try? await Task.sleep(for: .seconds(1))
@@ -242,7 +255,9 @@ struct GatewaySwitcherSheet: View {
         .tint(Color(uiColor: .label))
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+#if targetEnvironment(macCatalyst)
         .safeAreaInset(edge: .bottom) { SheetTimingProbeLabel() }
+#endif
         .onAppear {
             SheetDiagnostics.record("appeared")
             if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.log.fault("sheet appeared") }
