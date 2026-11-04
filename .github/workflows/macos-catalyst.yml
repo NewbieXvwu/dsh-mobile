@@ -190,6 +190,17 @@ jobs:
             --predicate 'subsystem == "com.clarklevis.dshmobile"' \
             > "$RUNNER_TEMP/app.log" 2>&1 &
           LOG_PID=$!
+          mkdir -p "$RUNNER_TEMP/samples"
+          (
+            while true; do
+              app_pid=$(pgrep -x DshMobile | head -1)
+              if [ -n "$app_pid" ]; then
+                sudo sample "$app_pid" 2 -file "$RUNNER_TEMP/samples/$app_pid-$(date +%s).txt" >/dev/null 2>&1 || true
+              fi
+              sleep 2
+            done
+          ) &
+          SAMPLE_PID=$!
           xcodebuild \
             -project DeepSeekHarnessMobile.xcodeproj \
             -scheme DeepSeekHarnessMobile \
@@ -208,6 +219,7 @@ jobs:
             > "$RUNNER_TEMP/test.log" 2>&1
           RC=$?
           kill $LOG_PID 2>/dev/null
+          kill $SAMPLE_PID 2>/dev/null
           # 只把关键行打到日志里，完整日志进 artifact
           grep -E "METRIC:|Test Case|error:.*failed|TEST (SUCCEEDED|FAILED)|Failed to" \
             "$RUNNER_TEMP/test.log" | head -80 || true
@@ -235,6 +247,7 @@ jobs:
             ${{ runner.temp }}/build.log
             ${{ runner.temp }}/test.log
             ${{ runner.temp }}/app.log
+            ${{ runner.temp }}/samples
           if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4

@@ -11,6 +11,32 @@ private let sheetCloseLog = Logger(subsystem: "com.clarklevis.dshmobile", catego
 enum SheetDiagnostics {
     static let selfTestEnabled = ProcessInfo.processInfo.arguments.contains("DSH_SHEET_SELFTEST")
     static let log = Logger(subsystem: "com.clarklevis.dshmobile", category: "SheetSelfTest")
+    static let probe = SheetTimingProbe()
+
+    static func record(_ stage: String) {
+        guard TouchTrace.enabled else { return }
+        probe.timeline += " \(stage)@\(Int64(Date().timeIntervalSince1970 * 1000))"
+        log.fault("\(probe.timeline, privacy: .public)")
+    }
+}
+
+final class SheetTimingProbe: ObservableObject {
+    @Published var timeline = "ready"
+}
+
+/// 与日志独立的可见证据，只有诊断启动时才加入界面。
+struct SheetTimingProbeLabel: View {
+    @ObservedObject private var probe = SheetDiagnostics.probe
+
+    var body: some View {
+        if TouchTrace.enabled {
+            Text(probe.timeline)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.orange)
+                .accessibilityIdentifier("dsh-tap-probe")
+                .allowsHitTesting(false)
+        }
+    }
 }
 
 // Mac Catalyst 的 sheet 没有下拉关闭手势，也没有系统提供的关闭按钮；
@@ -31,6 +57,7 @@ private struct MacSheetCloseModifier: ViewModifier {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(String(localized: "关闭")) {
+                        SheetDiagnostics.record("close")
                         sheetCloseLog.log("close button tapped (hasClose=\(close != nil ? "1" : "0", privacy: .public))")
                         close?()
                         dismiss()

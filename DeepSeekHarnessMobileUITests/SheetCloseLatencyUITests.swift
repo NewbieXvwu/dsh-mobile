@@ -63,12 +63,17 @@ final class SheetCloseLatencyUITests: XCTestCase {
         let sheetPresented: () -> Bool = {
             closeButton.exists || navTitle.exists || app.sheets.count > 0
         }
+        let probe = app.staticTexts["dsh-tap-probe"].firstMatch
+        print("METRIC: probe before tap=\(probe.exists ? probe.label : "MISSING")")
 
         // —— 打开 ——
+        let clickStart = Date()
         switcher.tap()
+        print("METRIC: tap call=\(ms(clickStart))ms probe=\(probe.exists ? probe.label : "MISSING")")
         let openLatency = waitFor("sheet 出现", timeout: openTimeout, sheetPresented)
         print("METRIC: open=\(openLatency.map(String.init) ?? "TIMEOUT")ms")
         if openLatency == nil {
+            print("METRIC: probe after timeout=\(probe.exists ? probe.label : "MISSING")")
             attach(app, name: "02-打开超时")
             print("METRIC: hierarchy after open timeout >>>\n\(app.debugDescription)\n<<<")
             XCTFail("点击切换主机后 sheet 未出现")

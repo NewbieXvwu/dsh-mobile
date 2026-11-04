@@ -7,6 +7,7 @@ struct GatewaySwitcherBar: View {
 
     var body: some View {
         Button {
+            SheetDiagnostics.record("tap")
             if TouchTrace.enabled { TouchTrace.log.fault("switcher-button-activated") }
             showsHosts = true
         } label: {
@@ -27,6 +28,15 @@ struct GatewaySwitcherBar: View {
             .overlay(Capsule().stroke(.white.opacity(0.14), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .bottomLeading) {
+            SheetTimingProbeLabel().offset(y: 24)
+        }
+        .task {
+            guard TouchTrace.enabled else { return }
+            try? await Task.sleep(for: .seconds(1))
+            let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+            SheetDiagnostics.record("windows=\(windows.count),key=\(windows.filter(\.isKeyWindow).count),active=\(UIApplication.shared.applicationState.rawValue)")
+        }
         .onAppear {
             guard SheetDiagnostics.selfTestEnabled, !sheetSelfTestStarted else { return }
             sheetSelfTestStarted = true
@@ -232,10 +242,13 @@ struct GatewaySwitcherSheet: View {
         .tint(Color(uiColor: .label))
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .safeAreaInset(edge: .bottom) { SheetTimingProbeLabel() }
         .onAppear {
+            SheetDiagnostics.record("appeared")
             if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.log.fault("sheet appeared") }
         }
         .onDisappear {
+            SheetDiagnostics.record("disappeared")
             if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.log.fault("sheet disappeared") }
         }
     }
