@@ -81,6 +81,12 @@ jobs:
       - name: Run sheet latency UI test
         run: |
           set -o pipefail
+          # app 在测试进程之外：实时抓 unified log（TouchTrace/SheetSelfTest）
+          log stream --style compact --level debug \
+            --predicate 'subsystem == "com.clarklevis.dshmobile"' \
+            > "$RUNNER_TEMP/app.log" 2>&1 &
+          LOG_PID=$!
+          set +e
           xcodebuild \
             -project DeepSeekHarnessMobile.xcodeproj \
             -scheme DeepSeekHarnessMobile \
@@ -97,6 +103,11 @@ jobs:
             CODE_SIGN_ENTITLEMENTS= \
             DEVELOPMENT_TEAM= \
             2>&1 | tee "$RUNNER_TEMP/test.log" | grep -E "METRIC:|Test Case|error:|TEST (SUCCEEDED|FAILED)" || true
+          RC=$?
+          kill $LOG_PID 2>/dev/null
+          echo "==== app timeline ===="
+          grep -E "TouchTrace|SheetSelfTest|MacSheetClose" "$RUNNER_TEMP/app.log" | tail -60 || true
+          exit $RC
 
       - name: Dump app diagnostics timeline
         if: always()
@@ -113,6 +124,7 @@ jobs:
           path: |
             ${{ runner.temp }}/build.log
             ${{ runner.temp }}/test.log
+            ${{ runner.temp }}/app.log
           if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4
