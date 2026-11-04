@@ -5,9 +5,14 @@ set -eu
 # 只在着色器编译子进程取消该覆盖，不改动 Swift/Kotlin 工具链。
 metal_sdk="$SDKROOT"
 unset TOOLCHAINS SDKROOT
-metal_target="air64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}"
-if [ "$PLATFORM_NAME" = "iphonesimulator" ]; then
-  metal_target="${metal_target}-simulator"
+if [ "$PLATFORM_NAME" = "macosx" ]; then
+  # Mac Catalyst：Metal 按 macOS 运行时目标编译（Catalyst 16.1 ↔ macOS 12.3）。
+  metal_target="air64-apple-macos12.3"
+else
+  metal_target="air64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}"
+  if [ "$PLATFORM_NAME" = "iphonesimulator" ]; then
+    metal_target="${metal_target}-simulator"
+  fi
 fi
 output_directory="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
 mkdir -p "$DERIVED_FILE_DIR" "$output_directory"

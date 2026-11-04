@@ -1,5 +1,7 @@
 import Foundation
+#if !targetEnvironment(macCatalyst)
 import Tsnetgo
+#endif
 
 protocol TsnetNodeServing: Sendable {
     func bringUp(hostname: String, authKey: String, stateDirectory: URL, timeoutSeconds: Int) async -> String
@@ -27,6 +29,7 @@ extension TsnetNodeServing {
 /// 握手、帧、关闭码都由系统栈完成（实测第一帧就是插件的 paired）。代价记两条：
 /// wss 走不了这条（TLS 的主机名对不上），以及 app 必须把「逻辑端点」和「连接端点」分开——
 /// 凭据、档案、日志一律用逻辑端点，只有 socket 连的是本地端口。
+#if !targetEnvironment(macCatalyst)
 final class TsnetNodeClient: TsnetNodeServing, @unchecked Sendable {
     /// 一次经节点的拨号入口：本地端口 + 它代表的目标。
     struct Forward {
@@ -240,3 +243,31 @@ final class TsnetNodeClient: TsnetNodeServing, @unchecked Sendable {
         return String(text[range])
     }
 }
+#endif
+
+#if targetEnvironment(macCatalyst)
+/// Mac Catalyst 占位：内嵌 tsnet 的 gomobile 产物（Tsnetgo.xcframework）只编了 iOS /
+/// 模拟器切片，没有 macabi 切片，所以桌面上不能在 app 进程里起 Tailscale 节点。
+/// 界面与凭据流全部保留，但 bringUp 必然失败——桌面 v1 的连接方式是局域网直连或
+/// Cloudflare Tunnel；后续可考虑调用系统 /Applications/Tailscale.app 的 CLI 做转发。
+final class TsnetNodeClient: TsnetNodeServing, @unchecked Sendable {
+    struct Forward {
+        let localPort: Int
+        let target: String
+    }
+
+    var lastError: String { "tsnet-unsupported-on-mac-catalyst" }
+
+    func bringUp(hostname: String, authKey: String, stateDirectory: URL, timeoutSeconds: Int) async -> String {
+        "{\"ok\":false,\"stage\":\"unsupported\",\"error\":\"tsnet-unsupported-on-mac-catalyst\"}"
+    }
+
+    func statusJson() async -> String {
+        "{\"ok\":false,\"stage\":\"unsupported\",\"error\":\"tsnet-unsupported-on-mac-catalyst\"}"
+    }
+
+    func forward(toHost host: String, port: Int, targetLabel: String) async -> Forward? { nil }
+
+    func shutdown() async -> Bool { true }
+}
+#endif

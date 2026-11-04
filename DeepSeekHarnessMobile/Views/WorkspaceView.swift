@@ -1201,9 +1201,12 @@ private struct GatewayAuthenticationMenu: View {
 
     private var menu: some View {
         Menu {
+            // Mac Catalyst 常无摄像头：只保留手动输入配对（扫描入口仅 iOS/iPadOS）。
+#if !targetEnvironment(macCatalyst)
             Button(action: onScan) {
                 Label("扫描二维码", systemImage: "qrcode.viewfinder")
             }
+#endif
             Button(action: onManualEntry) {
                 Label("手动输入配对信息", systemImage: "keyboard")
             }

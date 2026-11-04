@@ -1,6 +1,9 @@
 import ActivityKit
 import Foundation
 
+// ActivityKit 在 Mac Catalyst 不可用（SDK 27.2 全量标注 unavailable）。
+// Xcode 27.3「Bring Live Activities to Mac」GA 后可移除本守卫。
+#if !targetEnvironment(macCatalyst)
 /// 主 App 与 Widget Extension 共享的实时活动协议。
 struct AgentActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
@@ -25,6 +28,7 @@ struct AgentActivityAttributes: ActivityAttributes {
     let sessionTitle: String
     let startedAt: Date
 }
+#endif
 
 /// 当前显示在实时活动中的执行轨迹类型。
 ///

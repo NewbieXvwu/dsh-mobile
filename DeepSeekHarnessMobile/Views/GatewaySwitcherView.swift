@@ -129,6 +129,7 @@ struct GatewaySwitcherSheet: View {
             }
             .navigationTitle("切换主机")
             .navigationBarTitleDisplayMode(.inline)
+            .macSheetClose()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(editMode.isEditing ? String(localized: "完成编辑") : String(localized: "编辑")) {

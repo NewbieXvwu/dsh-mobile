@@ -2,6 +2,11 @@ import ActivityKit
 import Foundation
 import UIKit
 
+// ActivityKit 在 Mac Catalyst 不可用（SDK 27.2 全量 @available(macCatalyst, unavailable)）。
+// 桌面端以文件尾部 no-op 占位类替换，保持 AppStore/MultiGatewayStore 调用面不变。
+// Xcode 27.3「Bring Live Activities to Mac」GA 后可移除本守卫恢复灵动岛支持。
+#if !targetEnvironment(macCatalyst)
+
 /// 将 Gateway 的会话事件串行投影为系统实时活动。
 /// 本地 ActivityKit 更新依赖 App 仍有后台执行时间；后续接入 APNs 时可复用相同状态模型。
 @MainActor
@@ -1028,3 +1033,109 @@ private extension Activity where Attributes == AgentActivityAttributes {
         }
     }
 }
+
+#else
+
+/// Mac Catalyst 占位实现：无实时活动载体，所有事件落地为空操作。
+@MainActor
+final class AgentLiveActivityManager {
+    static let shared = AgentLiveActivityManager()
+
+    private init() {}
+
+    func applicationDidBecomeActive() {}
+
+    func sessionStarted(
+        gatewayID: String,
+        sessionID: String,
+        title: String,
+        turn: Int?,
+        sourceLabel: String? = nil
+    ) {}
+
+    func progressUpdated(
+        gatewayID: String,
+        sessionID: String,
+        title: String,
+        headline: String,
+        detail: String?,
+        kind: AgentActivityStepKind,
+        toolName: String? = nil,
+        sourceLabel: String? = nil
+    ) {}
+
+    func awaitingApproval(
+        gatewayID: String,
+        request: GatewayPendingApprovalRequest,
+        title: String,
+        command: String?,
+        sourceLabel: String? = nil
+    ) {}
+
+    func awaitingChoice(
+        gatewayID: String,
+        request: GatewayPendingQuestionRequest,
+        title: String,
+        prompt: String?,
+        sourceLabel: String? = nil
+    ) {}
+
+    func choiceResolved(
+        gatewayID: String,
+        sessionID: String,
+        rpcID: String,
+        cancelled: Bool,
+        title: String,
+        sourceLabel: String? = nil
+    ) {}
+
+    func enrichApprovalCommand(
+        gatewayID: String,
+        sessionID: String,
+        rpcID: String,
+        command: String?
+    ) {}
+
+    func sessionTitleUpdated(gatewayID: String, sessionID: String, title: String) {}
+
+    func approvalSubmitting(
+        gatewayID: String,
+        request: GatewayPendingApprovalRequest,
+        outcome: GatewayApprovalOutcome,
+        title: String,
+        command: String?,
+        sourceLabel: String? = nil
+    ) {}
+
+    func approvalResolved(
+        gatewayID: String,
+        sessionID: String,
+        rpcID: String,
+        outcome: GatewayApprovalOutcome,
+        title: String,
+        sourceLabel: String? = nil
+    ) {}
+
+    func approvalFailed(
+        gatewayID: String,
+        sessionID: String,
+        rpcID: String,
+        title: String,
+        reason: String?,
+        sourceLabel: String? = nil
+    ) {}
+
+    func sessionEnded(
+        gatewayID: String,
+        sessionID: String,
+        title: String,
+        failed: Bool,
+        sourceLabel: String? = nil
+    ) {}
+
+    func reconcileSessions(gatewayID: String, runningBySessionID: [String: Bool]) {}
+
+    func refreshActiveActivities() {}
+}
+
+#endif

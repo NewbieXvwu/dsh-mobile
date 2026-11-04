@@ -21,8 +21,17 @@ protocol AgentLongRunningKeepAlive: AnyObject {
 final class AgentBackgroundKeepAliveManager: NSObject, AgentLongRunningKeepAlive {
     private static let logger = LocalLogger(subsystem: "ai.dsh.mobile.ios", category: "agent-keepalive")
 
+    /// ActivityAuthorizationInfo 在 Mac Catalyst 不可用；桌面端恒为 false。
+    private static var liveActivitiesEnabledReport: Bool {
+        #if !targetEnvironment(macCatalyst)
+        return ActivityAuthorizationInfo().areActivitiesEnabled
+        #else
+        return false
+        #endif
+    }
+
     private func traceKeepAlive(_ event: String) {
-        Self.logger.notice("[AgentKeepAlive] event=\(event) background=\(self.applicationIsInBackground) workActive=\(self.agentWorkIsActive) location=\(self.isUpdatingLocation) audio=\(self.silentAudioIsRunning) authorization=\(self.locationManager.authorizationStatus.rawValue) liveActivitiesEnabled=\(ActivityAuthorizationInfo().areActivitiesEnabled)")
+        Self.logger.notice("[AgentKeepAlive] event=\(event) background=\(self.applicationIsInBackground) workActive=\(self.agentWorkIsActive) location=\(self.isUpdatingLocation) audio=\(self.silentAudioIsRunning) authorization=\(self.locationManager.authorizationStatus.rawValue) liveActivitiesEnabled=\(Self.liveActivitiesEnabledReport)")
     }
 
     static let shared = AgentBackgroundKeepAliveManager()
@@ -197,14 +206,23 @@ final class AgentBackgroundKeepAliveManager: NSObject, AgentLongRunningKeepAlive
     }
 
     private var hasVisibleAgentLiveActivity: Bool {
+        #if !targetEnvironment(macCatalyst)
         !Activity<AgentActivityAttributes>.activities.isEmpty
+        #else
+        false
+        #endif
     }
 
     private var shouldUseSilentAudio: Bool {
+        #if !targetEnvironment(macCatalyst)
         // ActivityKit 只要已启用，就把主岛完整留给 Agent 实时活动。
         // 否则播放会被系统当作 Now Playing，即使音量为零，也会把 Agent
         // 挤进右侧最小岛。实时活动不可用时才回退到静音音频保活。
         !ActivityAuthorizationInfo().areActivitiesEnabled && !hasVisibleAgentLiveActivity
+        #else
+        // 桌面端无灵动岛，始终允许静音音频保活。
+        true
+        #endif
     }
 
     private func reconcileSilentAudio() {

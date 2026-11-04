@@ -31,6 +31,10 @@ enum AgentLiveActivityIntentBridge {
     }
 }
 
+// LiveActivityIntent 仅 iOS/iPadOS 可用（Mac Catalyst 不可用）。桌面端审批走
+// 应用内横幅与系统通知，无需锁屏/灵动岛按钮。Xcode 27.3 起 Live Activities
+// 登陆 Mac，届时可移除此守卫（见 Apple「Bring Live Activities to Mac」）。
+#if !targetEnvironment(macCatalyst)
 @available(iOS 17.0, *)
 struct AllowAgentActionIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "允许本次操作"
@@ -96,3 +100,4 @@ struct RejectAgentActionIntent: LiveActivityIntent {
         return .result()
     }
 }
+#endif
