@@ -35,7 +35,6 @@ private struct MacSheetCloseModifier: ViewModifier {
 #endif
     }
 }
-
 extension View {
     /// 为 Mac Catalyst 补充 sheet 的关闭能力（右上角关闭按钮 + 点击外部关闭 + Esc）。
     /// `close` 可选：提供时（通常是把 sheet 的 isPresented/item 置回）优先调用；
@@ -78,10 +77,17 @@ private struct MacSheetOutsideTapCatcher: UIViewControllerRepresentable {
 
         override func viewDidDisappear(_ animated: Bool) {
             super.viewDidDisappear(animated)
+            sheetCloseLog.log("sheet content disappeared")
             remove()
         }
 
         private func install() {
+            // A/B: 窗口级 tap 手势疑似拖慢 sheet 内真实鼠标点击（Catalyst 手势-触摸
+            // 管线），默认禁用；需要时 defaults write <bundle-id> enableOutsideTapCatcher -bool YES。
+            guard UserDefaults.standard.bool(forKey: "enableOutsideTapCatcher") else {
+                sheetCloseLog.log("outside-tap catcher disabled by default")
+                return
+            }
             guard gesture == nil, let window = view.window else { return }
             let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
             recognizer.cancelsTouchesInView = false

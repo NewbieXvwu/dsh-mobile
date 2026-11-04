@@ -15,7 +15,7 @@ struct SettingsView: View {
     @State private var showsReleaseNotes = false
     @AppStorage(AppFontScale.key) private var fontScale = 1.0
     @AppStorage(AppFontScale.followsSystemKey) private var fontFollowsSystem = false
-    @AppStorage("disableAnimatedBackground") private var disableAnimatedBackground = false
+    @AppStorage("disableAnimatedBackground") private var disableAnimatedBackground = defaultDisableAnimatedBackground
     private let releaseInfo = BundledAppReleaseInfo.load()
 
     private var appVersion: String {
@@ -255,7 +255,11 @@ struct SettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("font-size-settings-row")
-                Toggle(isOn: $disableAnimatedBackground) {
+                // 绑定取反：开关语义跟随标签（开=动态背景），存储键保持 disable* 兼容。
+                Toggle(isOn: Binding(
+                    get: { !disableAnimatedBackground },
+                    set: { disableAnimatedBackground = !$0 }
+                )) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("动态背景")
                         Text("关闭后改用静态背景，降低空闲时的 GPU/CPU 占用")

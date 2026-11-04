@@ -13,6 +13,14 @@ enum HarnessBackgroundStyle {
     }
 }
 
+/// Mac Catalyst 默认关闭动态背景：逐帧 TimelineView + Metal 流体场实测把空闲主线程
+/// 占到 ~22%，并拖慢状态切换（sheet 关闭等）；需要鲸鱼动画可在设置里打开。
+#if targetEnvironment(macCatalyst)
+let defaultDisableAnimatedBackground = true
+#else
+let defaultDisableAnimatedBackground = false
+#endif
+
 /// The native counterpart of the DeepSeek Harness landing-page background.
 /// Metal renders the fluid field while Canvas keeps the grid and sampled whale
 /// independent, so each layer can be tuned or disabled without touching UI.
@@ -25,7 +33,7 @@ struct HarnessAnimatedBackground: View {
     @Environment(\.scenePhase) private var scenePhase
     // 用户可手动关闭动态背景（设置 > 外观）；逐帧 TimelineView + Metal 流体场
     // + Canvas 粒子在部分设备（尤其 Mac Catalyst）上空闲占用过高。
-    @AppStorage("disableAnimatedBackground") private var disableAnimatedBackground = false
+    @AppStorage("disableAnimatedBackground") private var disableAnimatedBackground = defaultDisableAnimatedBackground
 
     private var usesStaticBackground: Bool {
         if disableAnimatedBackground {
