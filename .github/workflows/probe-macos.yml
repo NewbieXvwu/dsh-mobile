@@ -1,0 +1,22 @@
+name: probe-macos
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/probe]
+
+jobs:
+  probe:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode inventory
+        run: |
+          xcodebuild -version
+          ls /Applications | grep -i xcode || true
+          xcodebuild -showsdks | head -40
+          sw_vers
+          java -version 2>&1 | head -3 || true
+      - name: Runner image details
+        run: |
+          echo "Image: $ImageOS / $ImageVersion"
+          ls /Library/Developer/CoreSimulator/Profiles/Runtimes 2>/dev/null || true
