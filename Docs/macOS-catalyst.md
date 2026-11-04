@@ -33,6 +33,21 @@ xcodebuild -project DeepSeekHarnessMobile.xcodeproj -scheme DeepSeekHarnessMobil
 - `-scmProvider system`：绕开本机 Xcode 内嵌 SCM XPC 挂死（环境相关，非仓库问题）。
 - 签名关闭后产物可直接 ad-hoc 运行：`codesign --force --deep --sign - DshMobile.app`。
 
+## CI 验证（GitHub Actions）
+
+`.github/workflows/macos-catalyst.yml` 在 `xcode-27` 预览镜像（Xcode 27.2 RC）上做
+`build-for-testing` + ad-hoc 签名 + XCUITest，产物是 `catalyst-logs`（build/test/app 三份日志）
+与 `xcresult`。跑在 fork `NewbieXvwu/dsh-mobile` 上，`workflow_dispatch` 可免提交重跑。
+
+一轮耗时（实测）：Swift/Kotlin 都没改 ≈ 3m50s，其中构建 ≈ 1m50s；改到 Kotlin 时会多出
+~3m 的 Gradle relink。关键优化（细节见 `Docs/catalyst-latency-handoff.md`）：
+
+- `scripts/kmp_input_hash.sh` 给 Kotlin 输入求哈希，`shared/build/.kmp-input-stamp-*` 命中就完全跳过 Gradle
+  （Catalyst 补丁会原地改 framework，Gradle 自己的 up-to-date 永远不成立，所以必须有这层闸门）；
+- `kmp-out` 缓存命中且哈希一致时不再恢复 1.2G 的 `~/.konan`；
+- checkout 后回拨源文件 mtime，DerivedData 恢复后才真正走增量编译；
+- 缓存用 `cache/restore` + `cache/save(if: always())`，测试红的时候也照常累积。
+
 ## 平台适配改动清单（committed）
 
 1. **shared KMP**：`macosArm64()` 目标 + `kspMacosArm64` Room 编译器；`IosChatHistoryCacheFactory.kt` 移至 `appleMain`（内容平台无关）。
