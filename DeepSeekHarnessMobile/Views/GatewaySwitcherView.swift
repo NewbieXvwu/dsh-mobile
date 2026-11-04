@@ -61,23 +61,91 @@ struct GatewaySwitcherBar: View {
                 showsHosts = true
                 do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
                 SheetDiagnostics.log.fault("selftest close-request")
-                showsHosts = false
+                if let close = SheetDiagnostics.closeForSelfTest { close() }
+                else { showsHosts = false }
             }
         }
         .accessibilityLabel("当前主机：\(hosts.activeProfile?.displayName ?? String(localized: "未选择"))，切换主机")
         .onChangeCompat(of: showsHosts) { _, presented in
             SheetDiagnostics.record("presented=\(presented)")
         }
+#if targetEnvironment(macCatalyst)
+        .background(GatewaySwitcherPresentation(isPresented: $showsHosts, hosts: hosts))
+#else
         .sheet(isPresented: $showsHosts) { GatewaySwitcherSheet(hosts: hosts, onClose: { showsHosts = false }) }
+#endif
     }
 }
 
+#if targetEnvironment(macCatalyst)
+/// 绕开 SwiftUI sheet 在 Catalyst 上无法解散的原生窗口路径。
+private struct GatewaySwitcherPresentation: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let hosts: MultiGatewayStore
+
+    func makeUIViewController(context: Context) -> Presenter { Presenter() }
+
+    func updateUIViewController(_ controller: Presenter, context: Context) {
+        if isPresented {
+            let sheet = AnyView(GatewaySwitcherSheet(hosts: hosts, onClose: { isPresented = false })
+                .environment(\.self, context.environment))
+            if let hosting = controller.presentedViewController as? UIHostingController<AnyView> {
+                hosting.rootView = sheet
+            } else {
+                let hosting = UIHostingController(rootView: sheet)
+                hosting.modalPresentationStyle = .custom
+                hosting.transitioningDelegate = controller
+                controller.present(hosting, animated: false)
+            }
+        } else if controller.presentedViewController != nil {
+            controller.dismiss(animated: false)
+        }
+    }
+
+    final class Presenter: UIViewController, UIViewControllerTransitioningDelegate {
+        func presentationController(forPresented presented: UIViewController,
+                                    presenting: UIViewController?,
+                                    source: UIViewController) -> UIPresentationController? {
+            Panel(presentedViewController: presented, presenting: presenting)
+        }
+    }
+
+    private final class Panel: UIPresentationController {
+        private let dimmingView = UIView()
+
+        override var frameOfPresentedViewInContainerView: CGRect {
+            guard let bounds = containerView?.bounds else { return .zero }
+            let size = CGSize(width: min(580, bounds.width - 32), height: min(640, bounds.height - 32))
+            return CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
+                          width: size.width, height: size.height)
+        }
+
+        override func presentationTransitionWillBegin() {
+            super.presentationTransitionWillBegin()
+            dimmingView.backgroundColor = UIColor.black.withAlphaComponent(0.2)
+            containerView?.insertSubview(dimmingView, at: 0)
+            presentedView?.layer.cornerRadius = 16
+            presentedView?.clipsToBounds = true
+            presentedView?.accessibilityViewIsModal = true
+        }
+
+        override func containerViewWillLayoutSubviews() {
+            super.containerViewWillLayoutSubviews()
+            dimmingView.frame = containerView?.bounds ?? .zero
+            presentedView?.frame = frameOfPresentedViewInContainerView
+        }
+
+        override func dismissalTransitionDidEnd(_ completed: Bool) {
+            super.dismissalTransitionDidEnd(completed)
+            if completed { dimmingView.removeFromSuperview() }
+        }
+    }
+}
+#endif
+
 struct GatewaySwitcherSheet: View {
     @ObservedObject var hosts: MultiGatewayStore
-    // Mac Catalyst: Environment(\.dismiss) from this sheet's toolbar button does
-    // not dismiss the presentation (observed: action runs, sheet stays). Closing
-    // through the presenting view's isPresented binding is the pattern every other
-    // sheet in this app uses and works on all platforms.
+    // Catalyst 的呈现控制器通过父级绑定关闭。
     var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -121,7 +189,11 @@ struct GatewaySwitcherSheet: View {
                                     toggleSelection(profile.id)
                                 } else {
                                     hosts.select(profile)
+#if targetEnvironment(macCatalyst)
+                                    onClose?()
+#else
                                     dismiss()
+#endif
                                 }
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -256,13 +328,8 @@ struct GatewaySwitcherSheet: View {
         }
         .foregroundStyle(Color(uiColor: .label))
         .tint(Color(uiColor: .label))
-#if !targetEnvironment(macCatalyst)
         .presentationDetents([.medium, .large])
-#endif
         .presentationDragIndicator(.visible)
-#if targetEnvironment(macCatalyst)
-        .safeAreaInset(edge: .bottom) { SheetTimingProbeLabel() }
-#endif
         .onAppear {
             SheetDiagnostics.record("appeared")
             if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.log.fault("sheet appeared") }

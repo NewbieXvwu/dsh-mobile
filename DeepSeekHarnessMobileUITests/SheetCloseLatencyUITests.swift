@@ -6,24 +6,14 @@ import XCTest
 /// （LocalAuthentication -5），XCUITest 无法启动；托管 runner 环境正常。
 ///
 /// Catalyst 使用 XCUIElement.click() 注入鼠标事件，iOS 使用 tap()。
-/// 配合 app 内的
-/// TouchTrace（DSH_TOUCH_TRACE=1）可把延迟拆成
-///   触摸抬起 → 按钮 action → sheet 出现 / 关闭请求 → sheet 消失
-/// 三段，慢在哪一段一目了然。
-///
-/// 注意：CI 上测试失败就是真失败（工作流已修掉 `|| true` 吞退出码的问题），
-/// 诊断期关注 METRIC 行与 artifact 里的 app.log。
+/// 使用应用探针的时间戳计时，排除 XCTest 自身的查询和空闲等待。
 final class SheetCloseLatencyUITests: XCTestCase {
-    // 失败要快：CI 上一轮"没出现"能省 90 秒（原来各 60s）。正常路径是 100ms 量级，
-    // 15s 已经给了 150 倍余量；真慢到 15s 以上，无论如何都要单独诊断。
     private let openTimeout: TimeInterval = 15
     private let closeTimeout: TimeInterval = 15
 
     override func setUp() {
         continueAfterFailure = false
     }
-
-    private func ms(_ from: Date) -> Int { Int(Date().timeIntervalSince(from) * 1000) }
 
     private func activate(_ element: XCUIElement) {
 #if targetEnvironment(macCatalyst)
@@ -33,15 +23,23 @@ final class SheetCloseLatencyUITests: XCTestCase {
 #endif
     }
 
-    /// 轮询直到条件成立，返回耗时毫秒；超时返回 nil。
-    private func waitFor(_ what: String, timeout: TimeInterval, _ condition: () -> Bool) -> Int? {
+    private func waitFor(_ what: String, timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
         let start = Date()
         while Date().timeIntervalSince(start) < timeout {
-            if condition() { return ms(start) }
+            if condition() { return true }
             usleep(50_000)
         }
         print("METRIC: timeout waiting for \(what) after \(Int(timeout))s")
-        return nil
+        return false
+    }
+
+    private func timestamp(_ stage: String, cycle: Int, timeline: String) throws -> Int64 {
+        let prefix = "\(stage)@"
+        let values = timeline.split(separator: " ").compactMap { event -> Int64? in
+            guard event.hasPrefix(prefix) else { return nil }
+            return Int64(event.dropFirst(prefix.count))
+        }
+        return try XCTUnwrap(values.dropFirst(cycle - 1).first, "缺少第 \(cycle) 轮 \(stage) 时间戳：\(timeline)")
     }
 
     private func attach(_ app: XCUIApplication, name: String) {
@@ -52,6 +50,9 @@ final class SheetCloseLatencyUITests: XCTestCase {
     }
 
     func testSwitcherSheetOpenAndCloseLatency() throws {
+#if !targetEnvironment(macCatalyst)
+        throw XCTSkip("此回归测试针对 Mac Catalyst 的鼠标与弹层呈现路径")
+#endif
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launchEnvironment["DSH_TOUCH_TRACE"] = "1"
@@ -72,43 +73,37 @@ final class SheetCloseLatencyUITests: XCTestCase {
             closeButton.exists || navTitle.exists || app.sheets.count > 0
         }
         let probe = app.staticTexts["dsh-tap-probe"].firstMatch
-        print("METRIC: probe before tap=\(probe.exists ? probe.label : "MISSING")")
+        XCTAssertTrue(probe.waitForExistence(timeout: 5), "诊断标签应可读取")
 
-        // —— 打开 ——
-        let clickStart = Date()
-        activate(switcher)
-        print("METRIC: tap call=\(ms(clickStart))ms probe=\(probe.exists ? probe.label : "MISSING")")
-        let openLatency = waitFor("sheet 出现", timeout: openTimeout, sheetPresented)
-        print("METRIC: open=\(openLatency.map(String.init) ?? "TIMEOUT")ms")
-        if openLatency == nil {
-            print("METRIC: probe after timeout=\(probe.exists ? probe.label : "MISSING")")
-            attach(app, name: "02-打开超时")
-            print("METRIC: hierarchy after open timeout >>>\n\(app.debugDescription)\n<<<")
-            XCTFail("点击切换主机后 sheet 未出现")
-            return
-        }
-        attach(app, name: "03-sheet已打开")
+        for cycle in 1...2 {
+            activate(switcher)
+            guard waitFor("sheet 第 \(cycle) 次出现", timeout: openTimeout, sheetPresented) else {
+                print("METRIC: probe after timeout=\(probe.exists ? probe.label : "MISSING")")
+                attach(app, name: "\(cycle)-打开超时")
+                print("METRIC: hierarchy after open timeout >>>\n\(app.debugDescription)\n<<<")
+                XCTFail("第 \(cycle) 轮点击切换主机后 sheet 未出现")
+                return
+            }
+            attach(app, name: "\(cycle)-sheet已打开")
+            activate(closeButton)
+            guard waitFor("sheet 第 \(cycle) 次消失", timeout: closeTimeout, { !sheetPresented() }) else {
+                attach(app, name: "\(cycle)-关闭超时")
+                print("METRIC: hierarchy after close timeout >>>\n\(app.debugDescription)\n<<<")
+                XCTFail("第 \(cycle) 轮点击关闭后 sheet 未消失")
+                return
+            }
 
-        // —— 关闭（真实点击右上角关闭按钮）——
-        activate(closeButton)
-        let closeLatency = waitFor("sheet 消失", timeout: closeTimeout) { !sheetPresented() }
-        print("METRIC: close=\(closeLatency.map(String.init) ?? "TIMEOUT")ms")
-        if closeLatency == nil {
-            attach(app, name: "04-关闭超时")
-            print("METRIC: hierarchy after close timeout >>>\n\(app.debugDescription)\n<<<")
-            XCTFail("点击关闭后 sheet 未消失")
-            return
+            let timeline = probe.label
+            let open = try timestamp("appeared", cycle: cycle, timeline: timeline)
+                - timestamp("tap", cycle: cycle, timeline: timeline)
+            let close = try timestamp("disappeared", cycle: cycle, timeline: timeline)
+                - timestamp("close", cycle: cycle, timeline: timeline)
+            let prefix = cycle == 1 ? "" : "cycle2 "
+            print("METRIC: \(prefix)open=\(open)ms close=\(close)ms probe=\(timeline)")
+            XCTAssertGreaterThanOrEqual(open, 0)
+            XCTAssertGreaterThanOrEqual(close, 0)
+            XCTAssertLessThan(open, 100, "第 \(cycle) 轮打开应小于 100ms")
+            XCTAssertLessThan(close, 100, "第 \(cycle) 轮关闭应小于 100ms")
         }
-
-        // —— 第二轮：排除首启冷路径 ——
-        activate(switcher)
-        let open2 = waitFor("sheet 第二次出现", timeout: openTimeout, sheetPresented)
-        guard open2 != nil else {
-            print("METRIC: cycle2 open=TIMEOUT")
-            return
-        }
-        activate(closeButton)
-        let close2 = waitFor("sheet 第二次消失", timeout: closeTimeout) { !sheetPresented() }
-        print("METRIC: cycle2 open=\(open2!)ms close=\(close2.map(String.init) ?? "TIMEOUT")ms")
     }
 }

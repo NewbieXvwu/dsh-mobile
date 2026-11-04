@@ -12,6 +12,7 @@ enum SheetDiagnostics {
     static let selfTestEnabled = ProcessInfo.processInfo.arguments.contains("DSH_SHEET_SELFTEST")
     static let log = Logger(subsystem: "com.clarklevis.dshmobile", category: "SheetSelfTest")
     static let probe = SheetTimingProbe()
+    static var closeForSelfTest: (() -> Void)?
 
     static func record(_ stage: String) {
         guard TouchTrace.enabled else { return }
@@ -42,7 +43,7 @@ struct SheetTimingProbeLabel: View {
 // Mac Catalyst 的 sheet 没有下拉关闭手势，也没有系统提供的关闭按钮；
 // 只能靠手势关闭的 sheet 在 Mac 上是"陷阱"。本修饰器为 Catalyst 补：
 // 1) 右上角显式"关闭"按钮（topBarTrailing + Esc 快捷键）；关闭动作优先走
-//    调用方提供的闭包（绑定置回），环境 dismiss 作为兜底。
+//    调用方提供的闭包（绑定置回），未提供闭包时调用环境 dismiss。
 // 2) 点击 sheet 以外的空白区域关闭（窗口级手势，按命中位置过滤；
 //    sheet 内容内的触摸不受影响）。iOS 上两者均不生效，保持原样。
 // 若上游后续为各 sheet 补了显式关闭入口，可整体移除本文件。
@@ -50,6 +51,12 @@ struct SheetTimingProbeLabel: View {
 private struct MacSheetCloseModifier: ViewModifier {
     @Environment(\.dismiss) private var dismiss
     var close: (() -> Void)?
+#if targetEnvironment(macCatalyst)
+    private func closeSheet() {
+        SheetDiagnostics.record("close")
+        if let close { close() } else { dismiss() }
+    }
+#endif
 
     func body(content: Content) -> some View {
 #if targetEnvironment(macCatalyst)
@@ -57,15 +64,22 @@ private struct MacSheetCloseModifier: ViewModifier {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(String(localized: "关闭")) {
-                        SheetDiagnostics.record("close")
                         sheetCloseLog.log("close button tapped (hasClose=\(close != nil ? "1" : "0", privacy: .public))")
-                        close?()
-                        dismiss()
+                        closeSheet()
                     }
                     .keyboardShortcut(.cancelAction)
                 }
             }
-            .background(MacSheetOutsideTapCatcher { sheetCloseLog.log("outside tap"); close?(); dismiss() })
+            .background(MacSheetOutsideTapCatcher {
+                sheetCloseLog.log("outside tap")
+                closeSheet()
+            })
+            .onAppear {
+                if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.closeForSelfTest = closeSheet }
+            }
+            .onDisappear {
+                if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.closeForSelfTest = nil }
+            }
 #else
         content
 #endif

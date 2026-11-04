@@ -1,5 +1,10 @@
 # 任务：诊断 Mac Catalyst 客户端「点击 sheet 打开/关闭延迟数秒」
 
+> 2026-11-04 执行进展：事件分层取证已完成。Catalyst 的 `tap()` 未送达按钮，
+> 改用鼠标 `click()` 后复现真实关闭故障。主机弹层现改用 Catalyst 专用的窗口内
+> UIKit 模态面板，本机后台打开约 18ms、关闭约 7ms，最终鼠标回归待 CI 确认。
+> 最新证据及修法见 `Docs/macOS-catalyst.md`。下文保留接手时的诊断基线。
+
 你接手一个已经构建成功、可运行、但交互延迟异常的 Mac Catalyst 客户端。目标不是"再猜一轮"，而是**用可复现的测量把延迟定位到具体一环并修掉**。所有基础设施（CI、埋点、测试）已经就绪，你的主要工作是读数据、缩小范围、改代码。
 
 ---
@@ -94,7 +99,7 @@ gh run download <runId> --repo NewbieXvwu/dsh-mobile -n catalyst-logs -D /tmp/ci
 gh run download <runId> --repo NewbieXvwu/dsh-mobile -n xcresult -D /tmp/ci-xcresult   # 里面有失败截图
 ```
 
-工作流做的事：选最新 Xcode → JDK17 → 恢复 KMP 产物缓存 → 判断 Kotlin 是否需要重编 → （必要时）恢复 Kotlin/Native 工具链缓存 → Metal 工具链探针 → 回拨源文件 mtime → 恢复 DerivedData → `build-for-testing`（`CODE_SIGNING_ALLOWED=NO`）→ ad-hoc 签名 → `log stream` 后跑 `test-without-building -only-testing:DeepSeekHarnessMobileUITests/SheetCloseLatencyUITests` → 打印 `METRIC:` 行与 app 时间线 → 上传 artifact。
+工作流做的事：选最新 Xcode → JDK17 → 恢复 KMP 产物缓存 → 判断 Kotlin 是否需要重编 → （必要时）恢复 Kotlin/Native 工具链缓存 → Metal 工具链探针 → 恢复 DerivedData → `build-for-testing`（`CODE_SIGNING_ALLOWED=NO`）→ ad-hoc 签名 → `log stream` 后跑 `test-without-building -only-testing:DeepSeekHarnessMobileUITests/SheetCloseLatencyUITests` → 打印 `METRIC:` 行与 app 时间线 → 上传 artifact。
 
 **迭代速度（实测：改动前一轮 9m30s / 构建 7m01s → 现在一轮 3–4 分钟 / 构建 50s–1m50s；只改 Swift 时最快 3m06s）**：
 
@@ -102,7 +107,7 @@ gh run download <runId> --repo NewbieXvwu/dsh-mobile -n xcresult -D /tmp/ci-xcre
 |---|---|---|
 | KMP 输入哈希闸门 | `scripts/kmp_input_hash.sh` 对 `shared/**`、`gradle/**`、根构建文件求哈希，与 `shared/build/.kmp-input-stamp-macosarm64-debug` 比对；相等且 framework 在 → 跳过 Gradle | 构建阶段 180s → ~1s |
 | Kotlin 工具链条件恢复 | workflow 里先恢复 14MB 的 `kmp-out` 缓存并跑同一个哈希判断，`skip=true` 时不恢复 1.2G 的 `~/.konan` | 每轮省 35s |
-| 源文件 mtime 回拨 | checkout 后把所有文件 mtime 设到 2020-01-01，再恢复 DerivedData | SwiftCompile 121s → 31s（全量重编 → 增量） |
+| 源文件 mtime 回拨（已移除） | 曾把文件时间设到 2020 年，导致新源码被旧 DerivedData 缓存掩盖 | 该优化会执行旧代码，必须保留 checkout 的真实时间戳 |
 | 缓存写入不再依赖成功 | `cache/restore` + `cache/save`（`if: always()`） | 诊断期测试是红的，缓存照样累积 |
 | Metal 探针 | 真编一个 `.metal`；`xcrun -f metal`/`-x` 在缺组件时也会成功 | 需要时才下载，不会误判 |
 
