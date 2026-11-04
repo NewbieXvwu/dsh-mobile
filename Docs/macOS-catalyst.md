@@ -101,7 +101,7 @@ CI 回归测试使用真实鼠标
 便于直接检查面板布局。最终鼠标回归结果待本次 CI 完成后补入。
 
 验证运行 [41865405644](https://github.com/NewbieXvwu/dsh-mobile/actions/runs/41865405644)
-当前尚未分配执行机。此前运行 41853724338 等待约 15 分钟后以
+等待约 15 分钟后未分配到执行机并失败，与此前运行 41853724338 相同。后者以
 `The job was not acquired by Runner of type hosted even after multiple attempts` 失败，
 没有执行构建或测试。`xcode-27` 是唯一提供所需 SDK 的现有镜像，处于公开预览阶段。
 本机程序化结果不能代替 CI 的真实鼠标验收。
