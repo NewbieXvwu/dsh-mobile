@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var showsReleaseNotes = false
     @AppStorage(AppFontScale.key) private var fontScale = 1.0
     @AppStorage(AppFontScale.followsSystemKey) private var fontFollowsSystem = false
+    @AppStorage("disableAnimatedBackground") private var disableAnimatedBackground = false
     private let releaseInfo = BundledAppReleaseInfo.load()
 
     private var appVersion: String {
@@ -254,6 +255,14 @@ struct SettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("font-size-settings-row")
+                Toggle(isOn: $disableAnimatedBackground) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("动态背景")
+                        Text("关闭后改用静态背景，降低空闲时的 GPU/CPU 占用")
+                            .appFont(SettingsTypography.description)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             } header: {
                 Text("外观")
                     .appFont(SettingsTypography.description)

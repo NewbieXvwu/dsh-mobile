@@ -23,8 +23,14 @@ struct HarnessAnimatedBackground: View {
     @State private var animationClock = HarnessBackgroundAnimationClock()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    // 用户可手动关闭动态背景（设置 > 外观）；逐帧 TimelineView + Metal 流体场
+    // + Canvas 粒子在部分设备（尤其 Mac Catalyst）上空闲占用过高。
+    @AppStorage("disableAnimatedBackground") private var disableAnimatedBackground = false
 
     private var usesStaticBackground: Bool {
+        if disableAnimatedBackground {
+            return true
+        }
         if #available(iOS 26.0, *) {
             return reduceMotion
         }

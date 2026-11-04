@@ -24,12 +24,17 @@ struct GatewaySwitcherBar: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("当前主机：\(hosts.activeProfile?.displayName ?? String(localized: "未选择"))，切换主机")
-        .sheet(isPresented: $showsHosts) { GatewaySwitcherSheet(hosts: hosts) }
+        .sheet(isPresented: $showsHosts) { GatewaySwitcherSheet(hosts: hosts, onClose: { showsHosts = false }) }
     }
 }
 
 struct GatewaySwitcherSheet: View {
     @ObservedObject var hosts: MultiGatewayStore
+    // Mac Catalyst: Environment(\.dismiss) from this sheet's toolbar button does
+    // not dismiss the presentation (observed: action runs, sheet stays). Closing
+    // through the presenting view's isPresented binding is the pattern every other
+    // sheet in this app uses and works on all platforms.
+    var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var editMode: EditMode = .inactive
@@ -129,7 +134,7 @@ struct GatewaySwitcherSheet: View {
             }
             .navigationTitle("切换主机")
             .navigationBarTitleDisplayMode(.inline)
-            .macSheetClose()
+            .macSheetClose { onClose?() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(editMode.isEditing ? String(localized: "完成编辑") : String(localized: "编辑")) {
