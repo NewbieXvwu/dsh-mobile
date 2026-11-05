@@ -71,10 +71,30 @@ final class MultiGatewayStore: ObservableObject {
             } else {
                 installPairingHandler(on: activeStore)
             }
+#if DEBUG
+            installSelfTestHostIfNeeded()
+#endif
         } catch { self.error = "读取或迁移主机资料失败：\(error.localizedDescription)" }
     }
 
     var activeProfile: GatewayProfile? { profiles.first { $0.id == activeID } }
+
+#if DEBUG
+    /// 自测/UI 测试用：注入一台内存里的假主机，让"编辑主机"内层弹层可被走通。
+    /// 只在显式传入启动参数时生效，且永不落盘（persist 会跳过）。
+    private(set) static var selfTestHostInstalled = false
+
+    private func installSelfTestHostIfNeeded() {
+        guard ProcessInfo.processInfo.arguments.contains("DSH_SHEET_MOCK_HOST"),
+              profiles.isEmpty else { return }
+        let mock = GatewayProfile(gatewayName: "SelfTest Gateway",
+                                  endpoints: ["wss://127.0.0.1:9/ws/mobile"])
+        Self.selfTestHostInstalled = true
+        profiles = [mock]
+        installPairingHandler(on: activeStore)
+        SheetDiagnostics.log.fault("mock host installed")
+    }
+#endif
 
     private func handleLiveActivityApproval(_ intent: AgentApprovalIntentRequest) -> Bool {
         let store = activeStore
@@ -368,6 +388,9 @@ final class MultiGatewayStore: ObservableObject {
     }
 
     private func persist() {
+#if DEBUG
+        if Self.selfTestHostInstalled { return }
+#endif
         do { defaults.set(try JSONEncoder().encode(profiles), forKey: Self.profilesKey) }
         catch { self.error = "保存主机资料失败：\(error.localizedDescription)" }
     }

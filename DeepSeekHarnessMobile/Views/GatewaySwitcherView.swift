@@ -4,6 +4,8 @@ struct GatewaySwitcherBar: View {
     @EnvironmentObject private var hosts: MultiGatewayStore
     @State private var showsHosts = false
     @State private var sheetSelfTestStarted = false
+    /// 面板高度覆盖值：列表按主机数算，编辑页需要更高。
+    @State private var panelHeightOverride: CGFloat?
 
     @ViewBuilder
     var body: some View {
@@ -73,9 +75,13 @@ struct GatewaySwitcherBar: View {
             SheetDiagnostics.record("presented=\(presented)")
         }
 #if targetEnvironment(macCatalyst)
-        .background(GatewaySwitcherPresentation(isPresented: $showsHosts, hosts: hosts))
+        .background(GatewaySwitcherPresentation(isPresented: $showsHosts, hosts: hosts,
+                                                   heightOverride: $panelHeightOverride))
 #else
-        .sheet(isPresented: $showsHosts) { GatewaySwitcherSheet(hosts: hosts, onClose: { showsHosts = false }) }
+        .sheet(isPresented: $showsHosts) {
+            GatewaySwitcherSheet(hosts: hosts, onClose: { showsHosts = false },
+                                onHeightChange: { panelHeightOverride = $0 })
+        }
 #endif
     }
 }
@@ -85,6 +91,7 @@ struct GatewaySwitcherBar: View {
 private struct GatewaySwitcherPresentation: UIViewControllerRepresentable {
     @Binding var isPresented: Bool
     let hosts: MultiGatewayStore
+    @Binding var heightOverride: CGFloat?
 
     func makeUIViewController(context: Context) -> Presenter { Presenter() }
 
@@ -96,14 +103,16 @@ private struct GatewaySwitcherPresentation: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: Presenter, context: Context) {
         if isPresented {
             let sheet = AnyView(GatewaySwitcherSheet(hosts: hosts, onClose: { isPresented = false },
+                                                     onHeightChange: { heightOverride = $0 },
                                                      embeddedInPanel: true)
                 .environment(\.self, context.environment))
-            let height = Self.panelHeight(rows: hosts.profiles.count)
+            let height = heightOverride ?? Self.panelHeight(rows: hosts.profiles.count)
             if let hosting = controller.presentedViewController as? UIHostingController<AnyView> {
                 hosting.rootView = sheet
                 hosting.preferredContentSize = CGSize(width: 560, height: height)
                 hosting.view.backgroundColor = .systemBackground
                 hosting.view.isOpaque = true
+                hosting.view.setNeedsLayout()
             } else {
                 let hosting = UIHostingController(rootView: sheet)
                 hosting.modalPresentationStyle = .custom
@@ -113,6 +122,7 @@ private struct GatewaySwitcherPresentation: UIViewControllerRepresentable {
                 hosting.view.isOpaque = true
                 controller.present(hosting, animated: false)
             }
+            controller.presentedViewController?.presentationController?.containerView?.setNeedsLayout()
         } else if controller.presentedViewController != nil {
             controller.dismiss(animated: false)
         }
@@ -149,12 +159,16 @@ private struct GatewaySwitcherPresentation: UIViewControllerRepresentable {
             presentedView?.layer.shadowRadius = 22
             presentedView?.layer.shadowOffset = CGSize(width: 0, height: 10)
             presentedView?.accessibilityViewIsModal = true
+
+            // SwiftUI 的内容背景在宿主里是半透明的，卡片后面必须自己垫一层不透明底板，
+            // 否则面板会透出下层窗口的点和被遮住的面板文字。
         }
 
         override func containerViewWillLayoutSubviews() {
             super.containerViewWillLayoutSubviews()
             dimmingView.frame = containerView?.bounds ?? .zero
-            presentedView?.frame = frameOfPresentedViewInContainerView
+            let frame = frameOfPresentedViewInContainerView
+            presentedView?.frame = frame
         }
 
         override func dismissalTransitionDidEnd(_ completed: Bool) {
@@ -183,6 +197,8 @@ struct GatewaySwitcherSheet: View {
     @ObservedObject var hosts: MultiGatewayStore
     // Catalyst 的呈现控制器通过父级绑定关闭。
     var onClose: (() -> Void)? = nil
+    /// Catalyst 窗口面板：内容切换（列表↔编辑）时回报期望的高度。
+    var onHeightChange: ((CGFloat?) -> Void)? = nil
     /// Catalyst 面板内嵌时不要把导航栏交给窗口工具栏，改为面板自带标题栏。
     var embeddedInPanel: Bool = false
     @Environment(\.dismiss) private var dismiss
@@ -202,7 +218,40 @@ struct GatewaySwitcherSheet: View {
         return [activeProfile] + hosts.profiles.filter { $0.id != activeID }
     }
 
+    static let editorPanelHeight: CGFloat = 260
+
+    @ViewBuilder
     var body: some View {
+        Group {
+            if embeddedInPanel, let profile = editing {
+                editorPanel(profile)
+                    .onAppear { onHeightChange?(Self.editorPanelHeight) }
+            } else {
+                listContent
+            }
+        }
+        // 生命周期挂在最外层：切到编辑页只是换内容，不算面板出现/消失。
+        .onAppear {
+            onHeightChange?(editing == nil ? nil : Self.editorPanelHeight)
+            SheetDiagnostics.record("appeared")
+            if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.log.fault("sheet appeared") }
+        }
+        .onDisappear {
+            onHeightChange?(nil)
+            SheetDiagnostics.record("disappeared")
+            hosts.stopProbes()
+            if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.log.fault("sheet disappeared") }
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { hosts.stopProbes(); return }
+            while !Task.isCancelled {
+                await hosts.refreshPresence()
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            }
+        }
+    }
+
+    private var listContent: some View {
         NavigationStack {
             List {
                 Section {
@@ -255,6 +304,7 @@ struct GatewaySwitcherSheet: View {
                                 Button {
                                     alias = profile.alias ?? ""
                                     kind = profile.deviceKind
+                                    SheetDiagnostics.record("edit-open")
                                     editing = profile
                                 } label: {
                                     Image(systemName: "pencil")
@@ -313,60 +363,8 @@ struct GatewaySwitcherSheet: View {
                     }
                 }
             }
-            .task(id: scenePhase) {
-                guard scenePhase == .active else { hosts.stopProbes(); return }
-                while !Task.isCancelled {
-                    await hosts.refreshPresence()
-                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
-                }
-            }
-            .onDisappear { hosts.stopProbes() }
-            .sheet(item: $editing) { profile in
-                NavigationStack {
-                    Form {
-                        Section {
-                            TextField(profile.gatewayName, text: $alias)
-                            HStack {
-                                Text("主机类型")
-                                Spacer()
-                                Menu {
-                                    Picker("主机类型", selection: $kind) {
-                                        Label("电脑", systemImage: "desktopcomputer").tag("desktopcomputer")
-                                        Label("服务器", systemImage: "server.rack").tag("server.rack")
-                                    }
-                                } label: {
-                                    HStack(alignment: .center, spacing: 4) {
-                                        Image(systemName: kind)
-                                            .appFont(.system(size: 15))
-                                            .frame(width: 20, height: 20)
-                                        Text(kind == "server.rack" ? String(localized: "服务器") : String(localized: "电脑"))
-                                            .appFont(.body)
-                                        Image(systemName: "chevron.up.chevron.down")
-                                            .appFont(.system(size: 11, weight: .medium))
-                                    }
-                                }
-                                .accessibilityLabel("主机类型")
-                                .accessibilityValue(kind == "server.rack" ? String(localized: "服务器") : String(localized: "电脑"))
-                            }
-                        } header: {
-                            Text("留空使用网关提供的名称：\(profile.gatewayName)")
-                                .appFont(.caption)
-                                .foregroundStyle(Color(uiColor: .secondaryLabel))
-                                .textCase(nil)
-                        }
-                    }
-                    .navigationTitle("编辑主机")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { Button("取消") { editing = nil } }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("保存") { hosts.edit(profile, alias: alias, kind: kind); editing = nil }
-                        }
-                    }
-                }
-                .foregroundStyle(Color(uiColor: .label))
-                .tint(Color(uiColor: .label))
-                .presentationDetents([.medium])
+            .sheet(item: embeddedInPanel ? Binding.constant(nil) : $editing) { profile in
+                editorSheet(profile)
             }
         }
         .modifier(PanelChrome(enabled: embeddedInPanel))
@@ -374,13 +372,95 @@ struct GatewaySwitcherSheet: View {
         .tint(Color(uiColor: .label))
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .onAppear {
-            SheetDiagnostics.record("appeared")
-            if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.log.fault("sheet appeared") }
+    }
+
+    private func editorPanel(_ profile: GatewayProfile) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button("取消") {
+                    SheetDiagnostics.record("edit-close")
+                    editing = nil
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(.cancelAction)
+                Spacer(minLength: 0)
+                Text("编辑主机").appFont(.headline)
+                Spacer(minLength: 0)
+                Button("保存") {
+                    hosts.edit(profile, alias: alias, kind: kind)
+                    editing = nil
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 48)
+            .background(Color(uiColor: .secondarySystemBackground))
+            .overlay(alignment: .bottom) { Divider() }
+
+            Form { editorFields(profile) }
+                .scrollContentBackground(.hidden)
         }
-        .onDisappear {
-            SheetDiagnostics.record("disappeared")
-            if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.log.fault("sheet disappeared") }
+        .background(Color(uiColor: .systemBackground))
+        .onAppear { SheetDiagnostics.record("edit-appeared") }
+        .onDisappear { SheetDiagnostics.record("edit-disappeared") }
+    }
+
+    private func editorSheet(_ profile: GatewayProfile) -> some View {
+        NavigationStack {
+            Form { editorFields(profile) }
+                .navigationTitle("编辑主机")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") {
+                            SheetDiagnostics.record("edit-close")
+                            editing = nil
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("保存") { hosts.edit(profile, alias: alias, kind: kind); editing = nil }
+                    }
+                }
+        }
+        .foregroundStyle(Color(uiColor: .label))
+        .tint(Color(uiColor: .label))
+        .presentationDetents([.medium])
+        .onAppear { SheetDiagnostics.record("edit-appeared") }
+        .onDisappear { SheetDiagnostics.record("edit-disappeared") }
+    }
+
+    @ViewBuilder
+    private func editorFields(_ profile: GatewayProfile) -> some View {
+        Section {
+            TextField(profile.gatewayName, text: $alias)
+            HStack {
+                Text("主机类型")
+                Spacer()
+                Menu {
+                    Picker("主机类型", selection: $kind) {
+                        Label("电脑", systemImage: "desktopcomputer").tag("desktopcomputer")
+                        Label("服务器", systemImage: "server.rack").tag("server.rack")
+                    }
+                } label: {
+                    HStack(alignment: .center, spacing: 4) {
+                        Image(systemName: kind)
+                            .appFont(.system(size: 15))
+                            .frame(width: 20, height: 20)
+                        Text(kind == "server.rack" ? String(localized: "服务器") : String(localized: "电脑"))
+                            .appFont(.body)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .appFont(.system(size: 11, weight: .medium))
+                    }
+                }
+                .accessibilityLabel("主机类型")
+                .accessibilityValue(kind == "server.rack" ? String(localized: "服务器") : String(localized: "电脑"))
+            }
+        } header: {
+            Text("留空使用网关提供的名称：\(profile.gatewayName)")
+                .appFont(.caption)
+                .foregroundStyle(Color(uiColor: .secondaryLabel))
+                .textCase(nil)
         }
     }
 
