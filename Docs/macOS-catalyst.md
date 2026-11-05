@@ -161,3 +161,31 @@ CI 增量编译用 `scripts/ci_mtime_manifest.py` 恢复：清单记录每个源
 不会写进真实主机列表），`DeepSeekHarnessMobileUITests/EditHostSheetUITests.swift` 用它跑
 「切换主机 → 编辑 → 编辑某台 → 取消」的真实点击回归；本机也可以用 AX 脚本驱动同一个流程
 （不抢前台）。本机实测：AX 打开面板 → 编辑 → 编辑主机 → 取消 → 关闭，全部即时完成。
+
+### 面板关闭不再依赖 SwiftUI 重新求值（2026-11-05 深夜）
+
+把 17 处 `.sheet` 换成 `WindowPanel` 之后发现新的坑：面板以模态覆盖窗口期间，
+SwiftUI 会推迟对 representable 的更新，`isPresented` 改回 false 也不一定叫到
+`updateUIViewController`。表现为"点完成毫无反应、面板永远关不掉"，比原来的系统
+sheet 更糟。
+
+排查依据：临时把 `updateUIViewController` 写进 `/tmp/windowpanel.log`，只看到
+初始的一串 `isPresented=false` 和一条 `isPresented=true`，之后没有任何调用——
+说明状态确实改了，SwiftUI 只是没再驱动这个 background 里的 representable。
+
+修法是关闭动作不再依赖那次更新：
+
+- `WindowPanelRegistry.marker = "dsh-window-panel"`，呈现时打在 hosting 视图上；
+- `closePanel { <把绑定置回> }`：先改状态（iOS 和后续重开仍需要），再沿
+  `presentedViewController`/`children`/`navigationController`/`tabBarController`
+  链把带标记的呈现层直接 `dismiss(animated: false)`；
+- 所有 `windowPanel` 的 `onClose`、以及面板内的「完成/取消」按钮都改走 `closePanel`。
+
+验证（本机，`open -g` 后台，不抢前台）：`DSH_RELEASE_NOTES_SELFTEST` 打开
+「本版本新功能」面板后由状态置回 false —— 修复前面板一直停在屏幕上，
+修复后 0.7s 内收掉、设置页恢复；AX 驱动「切换主机 → 关闭 → 切换主机」可反复开关，
+空闲 CPU 0%。
+
+CI：`41962533970` 的 `SheetCloseLatencyUITests` 通过（open=87ms/close=11ms、
+cycle2 34/8ms），新纳入的 `EditHostSheetUITests` 因假主机断言位置不对而失败，
+已改到面板内断言后重跑。
