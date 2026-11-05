@@ -75,8 +75,17 @@ struct GatewaySwitcherBar: View {
             SheetDiagnostics.record("presented=\(presented)")
         }
 #if targetEnvironment(macCatalyst)
-        .background(GatewaySwitcherPresentation(isPresented: $showsHosts, hosts: hosts,
-                                                   heightOverride: $panelHeightOverride))
+        // 面板的呈现/收场都走命令式（直接贴在窗口上），不放进 SwiftUI 树：
+        // representable 的宿主控制器每次重新求值都可能被拆掉，UIKit 会顺手解散面板。
+        .onChangeCompat(of: showsHosts) { _, presented in
+            if presented {
+                GatewaySwitcherPanel.show(hosts: hosts, heightOverride: $panelHeightOverride) {
+                    showsHosts = false
+                }
+            } else {
+                WindowPane.dismiss()
+            }
+        }
 #else
         .sheet(isPresented: $showsHosts) {
             GatewaySwitcherSheet(hosts: hosts, onClose: { showsHosts = false },
@@ -88,93 +97,35 @@ struct GatewaySwitcherBar: View {
 
 #if targetEnvironment(macCatalyst)
 /// 绕开 SwiftUI sheet 在 Catalyst 上无法解散的原生窗口路径。
-private struct GatewaySwitcherPresentation: UIViewControllerRepresentable {
-    @Binding var isPresented: Bool
-    let hosts: MultiGatewayStore
-    @Binding var heightOverride: CGFloat?
-
-    func makeUIViewController(context: Context) -> Presenter { Presenter() }
-
-    /// 面板高度跟随主机数量，避免空列表时出现一大块空白。
+/// 命令式呈现：直接构造宿主控制器贴到窗口上，生命周期完全由这里掌握。
+@MainActor
+enum GatewaySwitcherPanel {
     static func panelHeight(rows: Int) -> CGFloat {
         min(620, max(216, 158 + CGFloat(max(rows, 1)) * 64))
     }
 
-    func updateUIViewController(_ controller: Presenter, context: Context) {
-        if isPresented {
-            let sheet = AnyView(GatewaySwitcherSheet(hosts: hosts, onClose: { isPresented = false },
-                                                     onHeightChange: { heightOverride = $0 },
-                                                     embeddedInPanel: true)
-                .environment(\.self, context.environment))
-            let height = heightOverride ?? Self.panelHeight(rows: hosts.profiles.count)
-            if let hosting = controller.presentedViewController as? UIHostingController<AnyView> {
-                hosting.rootView = sheet
-                hosting.preferredContentSize = CGSize(width: 560, height: height)
-                hosting.view.backgroundColor = .systemBackground
-                hosting.view.isOpaque = true
-                hosting.view.setNeedsLayout()
-            } else {
-                let hosting = UIHostingController(rootView: sheet)
-                hosting.modalPresentationStyle = .custom
-                hosting.transitioningDelegate = controller
-                hosting.preferredContentSize = CGSize(width: 560, height: height)
-                hosting.view.backgroundColor = .systemBackground
-                hosting.view.isOpaque = true
-                controller.present(hosting, animated: false)
-            }
-            controller.presentedViewController?.presentationController?.containerView?.setNeedsLayout()
-        } else if controller.presentedViewController != nil {
-            controller.dismiss(animated: false)
-        }
-    }
-
-    final class Presenter: UIViewController, UIViewControllerTransitioningDelegate {
-        func presentationController(forPresented presented: UIViewController,
-                                    presenting: UIViewController?,
-                                    source: UIViewController) -> UIPresentationController? {
-            Panel(presentedViewController: presented, presenting: presenting)
-        }
-    }
-
-    private final class Panel: UIPresentationController {
-        private let dimmingView = UIView()
-
-        override var frameOfPresentedViewInContainerView: CGRect {
-            guard let bounds = containerView?.bounds else { return .zero }
-            let width = min(560, bounds.width - 48)
-            let wanted = presentedViewController.preferredContentSize.height
-            let height = min(max(216, wanted > 0 ? wanted : 560), bounds.height - 48)
-            return CGRect(x: bounds.midX - width / 2, y: bounds.midY - height / 2,
-                          width: width, height: height)
-        }
-
-        override func presentationTransitionWillBegin() {
-            super.presentationTransitionWillBegin()
-            dimmingView.backgroundColor = UIColor.black.withAlphaComponent(0.28)
-            containerView?.insertSubview(dimmingView, at: 0)
-            presentedView?.layer.cornerRadius = 14
-            presentedView?.layer.masksToBounds = false
-            presentedView?.layer.shadowColor = UIColor.black.cgColor
-            presentedView?.layer.shadowOpacity = 0.32
-            presentedView?.layer.shadowRadius = 22
-            presentedView?.layer.shadowOffset = CGSize(width: 0, height: 10)
-            presentedView?.accessibilityViewIsModal = true
-
-            // SwiftUI 的内容背景在宿主里是半透明的，卡片后面必须自己垫一层不透明底板，
-            // 否则面板会透出下层窗口的点和被遮住的面板文字。
-        }
-
-        override func containerViewWillLayoutSubviews() {
-            super.containerViewWillLayoutSubviews()
-            dimmingView.frame = containerView?.bounds ?? .zero
-            let frame = frameOfPresentedViewInContainerView
-            presentedView?.frame = frame
-        }
-
-        override func dismissalTransitionDidEnd(_ completed: Bool) {
-            super.dismissalTransitionDidEnd(completed)
-            if completed { dimmingView.removeFromSuperview() }
-        }
+    static func show(hosts: MultiGatewayStore,
+                     heightOverride: Binding<CGFloat?>,
+                     onClose: @escaping () -> Void) {
+        guard WindowPane.presented == nil else { return }
+        let height = heightOverride.wrappedValue ?? panelHeight(rows: hosts.profiles.count)
+        let sheet = AnyView(
+            GatewaySwitcherSheet(hosts: hosts,
+                                 onClose: onClose,
+                                 onHeightChange: { newValue in
+                                     if heightOverride.wrappedValue != newValue {
+                                         heightOverride.wrappedValue = newValue
+                                     }
+                                     WindowPane.resize(height: newValue ?? panelHeight(rows: hosts.profiles.count))
+                                 },
+                                 embeddedInPanel: true)
+        )
+        let hosting = UIHostingController(rootView: sheet)
+        hosting.preferredContentSize = CGSize(width: 560, height: height)
+        hosting.view.backgroundColor = .systemBackground
+        hosting.view.isOpaque = true
+        hosting.view.accessibilityIdentifier = WindowPanelRegistry.marker
+        WindowPane.present(hosting)
     }
 }
 #endif
