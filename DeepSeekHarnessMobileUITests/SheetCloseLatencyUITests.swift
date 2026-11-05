@@ -100,7 +100,7 @@ final class SheetCloseLatencyUITests: XCTestCase {
             // 从撤下到 onDisappear 还包含 120ms 的退出动画，单独记一条，避免把动画算成卡顿。
             let dismissed = try timestamp("presented=false", cycle: cycle, timeline: timeline)
             let disappeared = try timestamp("disappeared", cycle: cycle, timeline: timeline)
-            let close = dismissed - timestamp("close", cycle: cycle, timeline: timeline)
+            let close = dismissed - (try timestamp("close", cycle: cycle, timeline: timeline))
             let closeAnimation = disappeared - dismissed
             let prefix = cycle == 1 ? "" : "cycle2 "
             print("METRIC: \(prefix)open=\(open)ms close=\(close)ms closeExit=\(closeAnimation)ms probe=\(timeline)")
