@@ -330,6 +330,14 @@ private struct ScheduledTasksView: View {
     let onOpenSession: (String) -> Void
     @State private var expandedTaskIDs: Set<String> = []
     @State private var editingTask: ScheduledTask?
+
+    @ViewBuilder
+    private func scheduledTaskEditor(_ task: ScheduledTask) -> some View {
+        ScheduledTaskEditSheet(task: task, store: store, onClose: { editingTask = nil })
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+    }
+
     @State private var activeAlert: ActiveAlert?
     @State private var statusFilter: ScheduledTaskStatusFilter = .all
     @State private var searchQuery = ""
@@ -437,10 +445,8 @@ private struct ScheduledTasksView: View {
         .onReceive(store.gateway.$state) { state in
             if state.isConnected { store.refreshScheduledTasks() }
         }
-        .sheet(item: $editingTask) { task in
-            ScheduledTaskEditSheet(task: task, store: store)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+        .windowPanel(item: $editingTask, size: CGSize(width: 560, height: 660)) { task in
+            scheduledTaskEditor(task)
         }
         .onChangeCompat(of: store.scheduledTaskMutationError) { _, error in
             if let error, editingTask == nil { activeAlert = .error(error) }
@@ -664,6 +670,7 @@ private struct ScheduledTaskCardLayout: Layout {
 private struct ScheduledTaskEditSheet: View {
     let task: ScheduledTask
     @ObservedObject var store: AppStore
+    var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
     @State private var prompt: String
@@ -673,9 +680,10 @@ private struct ScheduledTaskEditSheet: View {
     @State private var pendingRequestID: String?
     @State private var localError: String?
 
-    init(task: ScheduledTask, store: AppStore) {
+    init(task: ScheduledTask, store: AppStore, onClose: (() -> Void)? = nil) {
         self.task = task
         self.store = store
+        self.onClose = onClose
         _title = State(initialValue: task.title)
         _prompt = State(initialValue: task.prompt)
         _selectedDate = State(initialValue: Self.parseDate(task.scheduledAt) ?? Date().addingTimeInterval(3_600))
@@ -726,7 +734,7 @@ private struct ScheduledTaskEditSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Button("取消") { dismiss() }
+                Button("取消") { if let onClose { onClose() } else { dismiss() } }
                 Spacer()
                 Text("编辑定时任务").appFont(.system(size: 17, weight: .semibold))
                 Spacer()
@@ -796,12 +804,12 @@ private struct ScheduledTaskEditSheet: View {
         .background(Color(uiColor: .systemBackground))
         .interactiveDismissDisabled(pendingRequestID != nil)
         .onChangeCompat(of: store.scheduledTaskCompletedRequestID) { _, completedID in
-            if completedID != nil && completedID == pendingRequestID { dismiss() }
+            if completedID != nil && completedID == pendingRequestID { if let onClose { onClose() } else { dismiss() } }
         }
         .onChangeCompat(of: store.scheduledTaskPendingID) { _, pendingID in
             if pendingRequestID != nil && pendingID == nil {
                 if store.scheduledTaskCompletedRequestID == pendingRequestID {
-                    dismiss()
+                    if let onClose { onClose() } else { dismiss() }
                     return
                 }
                 localError = store.scheduledTaskMutationError
@@ -1030,8 +1038,9 @@ private struct ConversationNavigationShell<Content: View>: View {
                       store.conversationDirectorySessionID == sessionID else { return }
                 workspaceFilesPresentation = WorkspaceFilesPresentation(sessionID: sessionID, initialPath: path)
             }
-            .sheet(item: $workspaceFilesPresentation, onDismiss: { store.conversationDirectoryPath = nil }) { request in
-                WorkspaceFilesSheet(store: store, sessionID: request.sessionID, initialPath: request.initialPath)
+            .windowPanel(item: $workspaceFilesPresentation, size: CGSize(width: 680, height: 700), onDismiss: { store.conversationDirectoryPath = nil }) { request in
+                WorkspaceFilesSheet(store: store, sessionID: request.sessionID, initialPath: request.initialPath,
+                                    onClose: { workspaceFilesPresentation = nil })
             }
     }
 
@@ -1119,11 +1128,13 @@ private struct WorkspaceFilesSheet: View {
     @ObservedObject var store: AppStore
     let sessionID: String?
     var initialPath: String? = nil
+    var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var downloadedPaths: Set<String> = []
 
     var body: some View {
+        PanelShell(title: String(localized: "工作区文件"), onClose: onClose ?? { dismiss() }) {
         NavigationStack {
             Group {
                 if store.workspaceFilesAreLoading && store.workspaceFileEntries.isEmpty {
@@ -1162,7 +1173,7 @@ private struct WorkspaceFilesSheet: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") { dismiss() }
+                    Button("完成") { if let onClose { onClose() } else { dismiss() } }
                 }
             }
             .overlay(alignment: .bottom) {
@@ -1184,6 +1195,7 @@ private struct WorkspaceFilesSheet: View {
                 }
             }
         }
+        }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task(id: sessionID) {
@@ -1200,11 +1212,8 @@ private struct WorkspaceFilesSheet: View {
         .onDisappear {
             if store.workspaceFileDownloadProgress != nil { store.cancelWorkspaceFileDownload() }
         }
-        .sheet(item: previewBinding) { request in
-            WorkspaceFilePreviewLoadingSheet(store: store, request: request) {
-                if request.sessionID == sessionID,
-                   let file = store.completedWorkspaceFile { downloadedPaths.insert(file.remotePath) }
-            }
+        .windowPanel(item: previewBinding, size: CGSize(width: 760, height: 720)) { request in
+            workspaceFilePreviewPanel(request)
         }
         .sheet(item: exportBinding) { file in
             WorkspaceFileExporter(url: file.url) { localURL in
@@ -1218,6 +1227,21 @@ private struct WorkspaceFilesSheet: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func workspaceFilePreviewPanel(_ request: WorkspaceFilePreviewRequest) -> some View {
+        WorkspaceFilePreviewLoadingSheet(
+            store: store,
+            request: request,
+            onClose: { previewBinding.wrappedValue = nil },
+            onSaved: {
+                if request.sessionID == sessionID,
+                   let file = store.completedWorkspaceFile {
+                    downloadedPaths.insert(file.remotePath)
+                }
+            }
+        )
     }
 
     private var workspaceFilePathBar: some View {
@@ -1362,6 +1386,7 @@ private struct WorkspaceFileRow: View {
 struct WorkspaceFilePreviewLoadingSheet: View {
     @ObservedObject var store: AppStore
     let request: WorkspaceFilePreviewRequest
+    var onClose: (() -> Void)? = nil
     var onSaved: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
@@ -1407,7 +1432,7 @@ struct WorkspaceFilePreviewLoadingSheet: View {
 
     private func close() {
         store.cancelWorkspaceFileDownload()
-        dismiss()
+        if let onClose { onClose() } else { dismiss() }
     }
 }
 

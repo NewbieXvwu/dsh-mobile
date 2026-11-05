@@ -467,8 +467,9 @@ struct ConversationView: View {
         .onDisappear {
             if store.conversationFileIsOpening { store.cancelWorkspaceFileDownload() }
         }
-        .sheet(item: conversationPreviewBinding) { request in
-            WorkspaceFilePreviewLoadingSheet(store: store, request: request)
+        .windowPanel(item: conversationPreviewBinding, size: CGSize(width: 760, height: 720)) { request in
+            WorkspaceFilePreviewLoadingSheet(store: store, request: request,
+                                             onClose: { conversationPreviewBinding.wrappedValue = nil })
         }
         .windowPanel(isPresented: $showsSessionStats, size: CGSize(width: 560, height: 640)) {
             SessionStatsSheet(

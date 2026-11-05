@@ -120,9 +120,10 @@ struct LogExportView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { exportToolbar }
         .task(id: RangeKey(start: start, end: end, retry: retry)) { await refresh() }
-        .sheet(item: $editor) { item in
+        .windowPanel(item: $editor, size: CGSize(width: 460, height: 480)) { item in
             LogDateTimePicker(title: item.title, isDate: item.isDate, initial: item.value,
-                              earliest: earliest ?? .distantPast, isStart: item.isStart) { value in
+                              earliest: earliest ?? .distantPast, isStart: item.isStart,
+                              onClose: { editor = nil }) { value in
                 if item.isStart { start = value } else { end = value }
                 preset = .custom
             }
@@ -320,10 +321,13 @@ private struct LogDateTimePicker: View {
     let isDate: Bool
     let earliest: Date
     let isStart: Bool
+    var onClose: (() -> Void)? = nil
     let confirm: (Date) -> Void
     @State private var draft: Date
-    init(title: String, isDate: Bool, initial: Date, earliest: Date, isStart: Bool, confirm: @escaping (Date) -> Void) {
-        self.title = title; self.isDate = isDate; self.earliest = earliest; self.isStart = isStart; self.confirm = confirm
+    init(title: String, isDate: Bool, initial: Date, earliest: Date, isStart: Bool,
+         onClose: (() -> Void)? = nil, confirm: @escaping (Date) -> Void) {
+        self.title = title; self.isDate = isDate; self.earliest = earliest; self.isStart = isStart
+        self.onClose = onClose; self.confirm = confirm
         _draft = State(initialValue: initial)
     }
     private var latest: Date {
@@ -339,6 +343,7 @@ private struct LogDateTimePicker: View {
         Binding(get: { draft }, set: { draft = min(LogExportHour.start(of: $0), latest) })
     }
     var body: some View {
+        PanelShell(title: title, onClose: onClose ?? { dismiss() }, closeLabel: String(localized: "取消")) {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -369,12 +374,13 @@ private struct LogDateTimePicker: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
+                    Button("取消") { if let onClose { onClose() } else { dismiss() } }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { confirm(LogExportHour.start(of: draft)); dismiss() }.disabled(draft > latest)
+                    Button("完成") { confirm(LogExportHour.start(of: draft)); if let onClose { onClose() } else { dismiss() } }.disabled(draft > latest)
                 }
             }
+        }
         }
         .presentationDetents([.height(isDate ? 560 : 408), .large])
         .presentationDragIndicator(.visible)
