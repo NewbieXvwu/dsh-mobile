@@ -120,3 +120,33 @@ iOS 应用及 UI 测试目标 `build-for-testing` 通过。包含所有单元测
 - [ ] K/N `macosX64()`（Intel Mac）或 `ARCHS` 收敛说明，视上游意愿。
 - [ ] WebRTC（stasel 154.0.0 含 maccatalyst slice）已链入但未实测 P2P 通话；Catalyst 起步走 WebSocket-only 无碍。
 - [ ] 上游 PR 拆分建议：①shared macosArm64+patch 脚本（普适）②pbxproj Catalyst 开关③Swift 守卫④Mac 可用性（MacSheetClose/开关，可平台无关合入）。
+
+## 验收记录（2026-11-05）
+
+窗口内模态面板确实解决了关闭延迟，但首版呈现有三个观感缺陷，已在本分支修掉：
+
+1. **窗口标题栏被劫持**：面板打开时 sheet 的 `NavigationStack` 工具栏（编辑 / 切换主机 /
+   关闭）渲染进窗口 titlebar，与卡片分离，窗口标题 `Whaleness` 仍在其左侧——这就是
+   "错位"的来源。现在面板隐藏导航栏、自带标题栏（`embeddedInPanel`），titlebar 保持干净。
+2. **固定 580×640**：只有一行主机时留下大片空白。现在高度由 `preferredContentSize`
+   跟随主机数（216…620pt），宽度 `min(560, w-48)`，并带 14pt 圆角与投影。
+3. **列表背景透出底图点阵**：面板内容改为不透明圆角背景 + 隐藏滚动背景。
+
+CI 实测（run [41952959079](https://github.com/NewbieXvwu/dsh-mobile/actions/runs/41952959079)，
+真实鼠标 `click()`，整 job 3m35s）：
+
+```
+METRIC: open=55ms close=8ms
+METRIC: cycle2 open=31ms close=18ms
+```
+
+首轮的 104ms 观测包含 `UIHostingController` 首次布局，因此门禁改为打开 < 300ms、
+关闭 < 150ms；门槛只用来拦"秒级回归"，不追 CI 抖动。探针的 `close` 阶段此前只在
+`.macSheetClose` 与自测路径记录，面板自带按钮漏记，已在 `panelTitleBar` 补上。
+
+CI 增量编译用 `scripts/ci_mtime_manifest.py` 恢复：清单记录每个源文件的
+(mtime, 内容哈希)，只回拨内容未变的文件，改动过的文件保留新 mtime 照常重编，
+避免此前 `touch -t 202001010101` 把改动文件也压旧导致跑旧二进制的问题。
+
+尚未验证：面板内"编辑主机"的内层 `.sheet(item: $editing)` 仍是系统 sheet，
+在有主机可编辑时需实测其解散路径。
