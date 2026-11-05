@@ -22,6 +22,7 @@ enum WindowPanelLayout {
 func closePanel(_ reset: @escaping () -> Void) {
     reset()
     #if targetEnvironment(macCatalyst)
+    WindowPane.dismiss()
     WindowPanelRegistry.activePresenter?.dismiss(animated: false)
     WindowPanelRegistry.activePresenter = nil
     for panel in WindowPanelRegistry.presentedPanels() {
@@ -195,6 +196,7 @@ enum WindowPane {
         presented = hosting
         overlay = shade
         layout()
+        SheetDiagnostics.log.fault("window-pane-present")
     }
 
     static func layout() {
@@ -217,6 +219,7 @@ enum WindowPane {
 
     static func dismiss() {
         guard let hosting = presented else { return }
+        SheetDiagnostics.log.fault("window-pane-dismiss")
         presented = nil
         let shade = overlay
         overlay = nil
@@ -258,8 +261,7 @@ struct WindowPanel<PanelContent: View>: UIViewControllerRepresentable {
             return
         }
         let root = AnyView(content().environment(\.self, context.environment))
-        guard controller.ownsPanel else { return }
-        if let hosting = WindowPane.presented {
+        if controller.ownsPanel, let hosting = WindowPane.presented {
             // 不重建 rootView：重建会让 SwiftUI 把内容当成新视图，面板里的
             // onAppear/onDisappear 反复触发，写回状态又推动下一轮更新。
             if abs(hosting.preferredContentSize.height - size.height) > 0.5 {
