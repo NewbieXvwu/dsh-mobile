@@ -294,6 +294,69 @@ extension EnvironmentValues {
     }
 }
 
+/// 面板卡片顶部的一个动作按钮。
+struct PanelAction {
+    let title: String
+    let prominent: Bool
+    let action: () -> Void
+
+    init(_ title: String, prominent: Bool = false, action: @escaping () -> Void) {
+        self.title = title
+        self.prominent = prominent
+        self.action = action
+    }
+}
+
+/// 面板内卡片自带的标题栏：左边标题、右边动作。
+///
+/// Catalyst 会把 SwiftUI 的导航栏挂到窗口标题栏上，卡片里就只剩内容，
+/// 看起来像「控件和内容分家」。面板模式下一律收起导航栏，改用这条标题栏。
+struct PanelHeader: View {
+    let title: String
+    let actions: [PanelAction]
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .appFont(.headline)
+                .lineLimit(1)
+            Spacer(minLength: 12)
+            ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
+                Button(action.title, action: action.action)
+                    .foregroundStyle(action.prominent ? Color.accentColor : Color(uiColor: .secondaryLabel))
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 48)
+        .background(Color.primary.opacity(0.06))
+        .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
+private struct PanelHeaderModifier: ViewModifier {
+    let title: String
+    let actions: [PanelAction]
+
+    func body(content: Content) -> some View {
+        if PanelContext.isEmbedded {
+            content
+                .toolbar(.hidden, for: .navigationBar)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    PanelHeader(title: title, actions: actions)
+                }
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// 面板模式下把导航栏收进卡片；iOS 上原样不动。
+    func panelHeader(_ title: String, actions: [PanelAction]) -> some View {
+        modifier(PanelHeaderModifier(title: title, actions: actions))
+    }
+}
+
 /// 用自定义 `UIPresentationController` 在窗口内呈现任意 SwiftUI 内容。
 ///
 /// 关键点（都是踩过的坑）：

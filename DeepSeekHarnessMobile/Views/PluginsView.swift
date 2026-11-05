@@ -285,6 +285,9 @@ private struct PluginComponentSheet: View {
                 .padding(22)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .panelHeader("组件详情", actions: [
+                PanelAction("完成", prominent: true) { if let onClose { onClose() } else { dismiss() } }
+            ])
             .navigationTitle("组件详情")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { if let onClose { onClose() } else { dismiss() } } } }

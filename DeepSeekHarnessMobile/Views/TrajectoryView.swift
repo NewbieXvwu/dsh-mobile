@@ -561,6 +561,9 @@ private struct EventDetailSheet: View {
                     selectedDetailPage
                 }
             }
+            .panelHeader(node.title, actions: [
+                PanelAction("完成", prominent: true) { if let onClose { onClose() } else { dismiss() } }
+            ])
             .navigationTitle(node.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { if let onClose { onClose() } else { dismiss() } } } }

@@ -350,6 +350,10 @@ struct SettingsView: View {
                         .padding(20)
                 }
                 .appFont(SettingsTypography.item)
+                .panelHeader("本版本新功能", actions: [
+                    PanelAction("完成", prominent: true) { closePanel { showsReleaseNotes = false } },
+                    PanelAction("GitHub 发布页") { openRelease("dsh-mobile", version: nil) }
+                ])
                 .navigationTitle("本版本新功能")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -530,6 +534,9 @@ private struct PrivacyPolicySheet: View {
                 }
             }
             .appFont(SettingsTypography.item)
+            .panelHeader("隐私政策", actions: [
+                PanelAction("完成", prominent: true) { if let onClose { onClose() } else { dismiss() } }
+            ])
             .navigationTitle("隐私政策")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

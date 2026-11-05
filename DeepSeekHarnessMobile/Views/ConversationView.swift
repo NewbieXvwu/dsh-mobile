@@ -5807,6 +5807,9 @@ struct TeamContentSheet: View {
                 .padding(20)
                 .readableContentWidth()
             }
+            .panelHeader(store.teamSnapshot.isTeam ? String(localized: "智能体团队") : String(localized: "子智能体"), actions: [
+                PanelAction("完成", prominent: true) { if let onClose { onClose() } else { dismiss() } }
+            ])
             .navigationTitle(store.teamSnapshot.isTeam ? String(localized: "智能体团队") : String(localized: "子智能体"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { if let onClose { onClose() } else { dismiss() } } } }
