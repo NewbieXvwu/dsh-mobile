@@ -12,6 +12,7 @@ enum TouchTrace {
     static let enabled =
         ProcessInfo.processInfo.environment["DSH_TOUCH_TRACE"] == "1"
         || SheetDiagnostics.selfTestEnabled
+        || SheetDiagnostics.pairingSelfTestEnabled
 
     static let log = Logger(subsystem: "com.clarklevis.dshmobile", category: "TouchTrace")
 

@@ -10,6 +10,7 @@ private let sheetCloseLog = Logger(subsystem: "com.clarklevis.dshmobile", catego
 /// 用于离线定位 Catalyst sheet 的打开/关闭延迟，不依赖人工点击。
 enum SheetDiagnostics {
     static let selfTestEnabled = ProcessInfo.processInfo.arguments.contains("DSH_SHEET_SELFTEST")
+    static let pairingSelfTestEnabled = ProcessInfo.processInfo.arguments.contains("DSH_PAIRING_SELFTEST")
     static let log = Logger(subsystem: "com.clarklevis.dshmobile", category: "SheetSelfTest")
     static let probe = SheetTimingProbe()
     static var closeForSelfTest: (() -> Void)?

@@ -195,9 +195,19 @@ struct WorkspaceView: View {
                 }
             )
         }
-        .sheet(isPresented: $showsManualPairing) {
-            ManualGatewayPairingSheet(gateway: hosts.pairingStore?.gateway ?? store.gateway)
-                .environmentObject(store)
+        .windowPanel(isPresented: $showsManualPairing, size: CGSize(width: 560, height: 620)) {
+            ManualGatewayPairingSheet(
+                gateway: hosts.pairingStore?.gateway ?? store.gateway,
+                onClose: { showsManualPairing = false }
+            )
+            .environmentObject(store)
+        }
+        .task {
+            // 仅诊断：把「手动配对」sheet 自动打开，让 dismiss 路径可以被计时。
+            guard SheetDiagnostics.pairingSelfTestEnabled else { return }
+            try? await Task.sleep(for: .seconds(2))
+            showsManualPairing = true
+            SheetDiagnostics.record("pairing-open-requested")
         }
     }
 
@@ -1251,15 +1261,77 @@ private struct ManualGatewayPairingSheet: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var gateway: GatewayClient
+    /// Catalyst 面板里由绑定负责关闭；iOS 的 sheet 仍走环境 dismiss。
+    var onClose: (() -> Void)? = nil
 
     @State private var pairingText = ""
     @State private var validationError: String?
     @State private var didAttemptConnection = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+        Group {
+            if WindowPanelLayout.isEmbedded {
+                VStack(spacing: 0) {
+                    panelHeader
+                    scrollContent
+                }
+            } else {
+                NavigationStack {
+                    scrollContent
+                        .navigationTitle("设备认证")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("完成", action: close)
+                            }
+                        }
+                }
+                .presentationDetents([.large])
+            }
+        }
+        .onAppear {
+            SheetDiagnostics.record("pairing-appeared")
+            guard SheetDiagnostics.pairingSelfTestEnabled else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                close()
+            }
+        }
+        .onDisappear { SheetDiagnostics.record("pairing-disappeared") }
+    }
+
+    private func close() {
+        SheetDiagnostics.record("pairing-close-tap")
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
+        SheetDiagnostics.record("pairing-dismiss-returned")
+    }
+
+    private var panelHeader: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Text("设备认证")
+                    .appFont(.headline)
+                Spacer(minLength: 8)
+                Button("完成", action: close)
+                    .appFont(.subheadline.weight(.semibold))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(DSHColor.ocean)
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(.horizontal, 18)
+            .frame(height: 48)
+            .background(Color(uiColor: .secondarySystemBackground))
+            Divider()
+        }
+    }
+
+    private var scrollContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("手动输入配对信息")
                             .appFont(.title2.bold())
@@ -1318,19 +1390,9 @@ private struct ManualGatewayPairingSheet: View {
                     .disabled(pairingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isConnecting)
                     .opacity(pairingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isConnecting ? 0.45 : 1)
                 }
-                .padding(22)
-            }
-            .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("设备认证")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") { dismiss() }
-                }
-            }
+            .padding(22)
         }
-        .presentationDetents([.large])
-        .background(.regularMaterial)
+        .background(Color(uiColor: .systemGroupedBackground))
     }
 
     @ViewBuilder
