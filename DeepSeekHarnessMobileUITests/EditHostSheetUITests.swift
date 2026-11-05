@@ -56,8 +56,7 @@ final class EditHostSheetUITests: XCTestCase {
             .matching(NSPredicate(format: "label CONTAINS %@", "切换主机"))
             .firstMatch
         XCTAssertTrue(switcher.waitForExistence(timeout: 30), "主界面应有切换主机入口")
-        XCTAssertTrue(app.staticTexts["SelfTest Gateway"].waitForExistence(timeout: 10),
-                      "自测主机应出现在主界面")
+        _ = app.staticTexts["SelfTest Gateway"].waitForExistence(timeout: 10)
 
         let closePanel = app.buttons["关闭"].firstMatch
         activate(switcher)
@@ -66,6 +65,9 @@ final class EditHostSheetUITests: XCTestCase {
             print("METRIC: hierarchy >>>\n\(app.debugDescription)\n<<<")
             return XCTFail("点击切换主机后面板未出现")
         }
+
+        XCTAssertTrue(app.staticTexts["SelfTest Gateway"].waitForExistence(timeout: 10),
+                      "面板里应出现自测主机")
 
         let probe = app.staticTexts["dsh-tap-probe"].firstMatch
         XCTAssertTrue(probe.waitForExistence(timeout: 5), "诊断标签应可读取")
