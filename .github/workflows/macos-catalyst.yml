@@ -135,6 +135,12 @@ jobs:
           restore-keys: |
             dd-${{ runner.os }}-
 
+      # 只回拨"内容未变"的文件：checkout 会把 mtime 刷成现在，Xcode 于是判定全量重编；
+      # 而粗暴 touch -t 会把本轮真正改过的文件也压旧，导致跑旧二进制。
+      - name: Replay unchanged source mtimes
+        if: always()
+        run: python3 scripts/ci_mtime_manifest.py apply "$PWD" "$RUNNER_TEMP/dd/Build/.ci-mtimes.tsv"
+
       - name: Build for testing (Mac Catalyst)
         run: |
           xcodebuild \
@@ -262,6 +268,10 @@ jobs:
             .gradle
             shared/build
           key: ${{ steps.kmp-out.outputs.cache-primary-key }}
+
+      - name: Record source mtimes
+        if: always()
+        run: python3 scripts/ci_mtime_manifest.py save "$PWD" "$RUNNER_TEMP/dd/Build/.ci-mtimes.tsv"
 
       # DerivedData 每次都是新 key（run_id），滚动覆盖，总是保存最新一份。
       - name: Save DerivedData (rolling)
