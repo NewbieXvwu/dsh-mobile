@@ -226,3 +226,11 @@ cycle2 34/8ms），新纳入的 `EditHostSheetUITests` 因假主机断言位置�
   `METRIC: edit-open=23ms edit-close=19ms`、`METRIC: open=62ms close=48ms`、
   `METRIC: cycle2 open=29ms close=40ms`，`EditHostSheetUITests` 与
   `SheetCloseLatencyUITests` 均通过（真实鼠标点击，计时取自应用内探针）。
+
+### 面板标题栏收口（2026-11-05）
+
+所有 `windowPanel` 面板现在共用 `PanelHeader`（`Core/WindowPanel.swift`）：卡片内 48pt 标题栏，左侧标题、右侧动作（主操作 accent 色），标题栏下方一条分隔线；同时内容里 `.toolbar(.hidden, for: .navigationBar)`，避免 Catalyst 把 SwiftUI 导航栏挂到窗口标题栏上造成「控件和内容分家」。
+
+覆盖的入口：切换主机、设备认证（手动配对）、目录浏览器、发布说明、隐私政策、组件详情、轨迹详情、智能体团队、会话状态、工作区文件、日志时间选择、Tailscale 账号编辑。定时任务编辑与文件预览本来就在卡片内自绘标题栏。
+
+`PanelContext` / `PanelAction` / `PanelHeader` 在 iOS 侧也有一份 `isEmbedded == false` 的扁平实现，保证同一份 `.panelHeader(...)` 调用点在 iOS 上编译、渲染均不变。

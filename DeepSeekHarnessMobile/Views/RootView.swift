@@ -1133,6 +1133,20 @@ private struct WorkspaceFilesSheet: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var downloadedPaths: Set<String> = []
 
+    /// 面板模式下卡片标题栏上的动作：先「上一级」，再「完成」。
+    private var workspaceFilePanelActions: [PanelAction] {
+        var actions: [PanelAction] = []
+        if store.workspaceFilePath != "." {
+            actions.append(PanelAction("上一级") {
+                store.browseWorkspaceFiles(path: parentPath(of: store.workspaceFilePath))
+            })
+        }
+        actions.append(PanelAction("完成", prominent: true) {
+            if let onClose { onClose() } else { dismiss() }
+        })
+        return actions
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -1158,6 +1172,7 @@ private struct WorkspaceFilesSheet: View {
                     .refreshable { store.browseWorkspaceFiles(path: store.workspaceFilePath) }
                 }
             }
+            .panelHeader("工作区文件", actions: workspaceFilePanelActions)
             .navigationTitle("工作区文件")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .top, spacing: 0) {

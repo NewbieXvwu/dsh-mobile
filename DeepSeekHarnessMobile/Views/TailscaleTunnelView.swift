@@ -352,7 +352,7 @@ struct TailscaleTunnelSettingsView: View {
             if scenePhase == .active { await tunnel.refreshAfterReturningToApp() }
         }
         .windowPanel(item: $editingAccount, size: CGSize(width: 460, height: 240)) { account in
-            TailscaleAccountEditor(title: "重命名", name: account.name, onClose: { closePanel { editingAccount = nil } }) { name in
+            TailscaleAccountEditor(title: "重命名", titleText: String(localized: "重命名"), name: account.name, onClose: { closePanel { editingAccount = nil } }) { name in
                 settings.renameAccount(account.id, name: name)
             }
         }
@@ -619,6 +619,7 @@ final class TailscaleLoginDialogController: UIViewController {
 
 private struct TailscaleAccountEditor: View {
     let title: LocalizedStringKey
+    let titleText: String
     @State var name: String
     var onClose: (() -> Void)? = nil
     let save: (String) -> Void
@@ -630,6 +631,13 @@ private struct TailscaleAccountEditor: View {
                 TextField("账号备注（可选）", text: $name)
                     .accessibilityIdentifier("tunnel-account-name")
             }
+            .panelHeader(titleText, actions: [
+                PanelAction("取消") { if let onClose { onClose() } else { dismiss() } },
+                PanelAction("确定", prominent: true) {
+                    save(name)
+                    if let onClose { onClose() } else { dismiss() }
+                }
+            ])
             .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

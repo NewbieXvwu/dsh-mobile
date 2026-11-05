@@ -1350,22 +1350,11 @@ private struct ManualGatewayPairingSheet: View {
     }
 
     private var panelHeader: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text("设备认证")
-                    .appFont(.headline)
-                Spacer(minLength: 8)
-                Button("完成", action: close)
-                    .appFont(.subheadline.weight(.semibold))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(DSHColor.ocean)
-                    .keyboardShortcut(.cancelAction)
-            }
-            .padding(.horizontal, 18)
-            .frame(height: 48)
-            .background(Color(uiColor: .secondarySystemBackground))
-            Divider()
-        }
+        // 与其它面板共用同一套卡片标题栏，避免每个面板长得都不一样。
+        PanelHeader(title: String(localized: "设备认证"), actions: [
+            PanelAction("完成", prominent: true, action: close)
+        ])
+        .keyboardShortcut(.cancelAction)
     }
 
     private var scrollContent: some View {

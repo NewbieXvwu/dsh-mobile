@@ -369,6 +369,13 @@ private struct LogDateTimePicker: View {
                 .padding(16)
             }
             .appFont(SettingsTypography.item)
+            .panelHeader(title, actions: [
+                PanelAction("取消") { if let onClose { onClose() } else { dismiss() } },
+                PanelAction("完成", prominent: true) {
+                    confirm(LogExportHour.start(of: draft))
+                    if let onClose { onClose() } else { dismiss() }
+                }
+            ])
             .navigationTitle(LocalizedStringKey(title))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

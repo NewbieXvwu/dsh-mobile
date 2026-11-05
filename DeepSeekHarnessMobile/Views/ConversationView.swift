@@ -3316,6 +3316,9 @@ private struct SessionStatsSheet: View {
                 }
                 .padding(20)
             }
+            .panelHeader("会话状态", actions: [
+                PanelAction("完成", prominent: true) { if let onClose { onClose() } else { dismiss() } }
+            ])
             .navigationTitle("会话状态")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
