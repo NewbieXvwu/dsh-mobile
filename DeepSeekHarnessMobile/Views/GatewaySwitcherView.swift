@@ -88,16 +88,29 @@ private struct GatewaySwitcherPresentation: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> Presenter { Presenter() }
 
+    /// 面板高度跟随主机数量，避免空列表时出现一大块空白。
+    static func panelHeight(rows: Int) -> CGFloat {
+        min(620, max(216, 158 + CGFloat(max(rows, 1)) * 64))
+    }
+
     func updateUIViewController(_ controller: Presenter, context: Context) {
         if isPresented {
-            let sheet = AnyView(GatewaySwitcherSheet(hosts: hosts, onClose: { isPresented = false })
+            let sheet = AnyView(GatewaySwitcherSheet(hosts: hosts, onClose: { isPresented = false },
+                                                     embeddedInPanel: true)
                 .environment(\.self, context.environment))
+            let height = Self.panelHeight(rows: hosts.profiles.count)
             if let hosting = controller.presentedViewController as? UIHostingController<AnyView> {
                 hosting.rootView = sheet
+                hosting.preferredContentSize = CGSize(width: 560, height: height)
+                hosting.view.backgroundColor = .systemBackground
+                hosting.view.isOpaque = true
             } else {
                 let hosting = UIHostingController(rootView: sheet)
                 hosting.modalPresentationStyle = .custom
                 hosting.transitioningDelegate = controller
+                hosting.preferredContentSize = CGSize(width: 560, height: height)
+                hosting.view.backgroundColor = .systemBackground
+                hosting.view.isOpaque = true
                 controller.present(hosting, animated: false)
             }
         } else if controller.presentedViewController != nil {
@@ -118,17 +131,23 @@ private struct GatewaySwitcherPresentation: UIViewControllerRepresentable {
 
         override var frameOfPresentedViewInContainerView: CGRect {
             guard let bounds = containerView?.bounds else { return .zero }
-            let size = CGSize(width: min(580, bounds.width - 32), height: min(640, bounds.height - 32))
-            return CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
-                          width: size.width, height: size.height)
+            let width = min(560, bounds.width - 48)
+            let wanted = presentedViewController.preferredContentSize.height
+            let height = min(max(216, wanted > 0 ? wanted : 560), bounds.height - 48)
+            return CGRect(x: bounds.midX - width / 2, y: bounds.midY - height / 2,
+                          width: width, height: height)
         }
 
         override func presentationTransitionWillBegin() {
             super.presentationTransitionWillBegin()
-            dimmingView.backgroundColor = UIColor.black.withAlphaComponent(0.2)
+            dimmingView.backgroundColor = UIColor.black.withAlphaComponent(0.28)
             containerView?.insertSubview(dimmingView, at: 0)
-            presentedView?.layer.cornerRadius = 16
-            presentedView?.clipsToBounds = true
+            presentedView?.layer.cornerRadius = 14
+            presentedView?.layer.masksToBounds = false
+            presentedView?.layer.shadowColor = UIColor.black.cgColor
+            presentedView?.layer.shadowOpacity = 0.32
+            presentedView?.layer.shadowRadius = 22
+            presentedView?.layer.shadowOffset = CGSize(width: 0, height: 10)
             presentedView?.accessibilityViewIsModal = true
         }
 
@@ -146,10 +165,26 @@ private struct GatewaySwitcherPresentation: UIViewControllerRepresentable {
 }
 #endif
 
+/// Catalyst 面板需要自己撑起圆角背景；iOS 仍交给系统 sheet。
+private struct PanelChrome: ViewModifier {
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .background(Color(uiColor: .systemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        } else {
+            content
+        }
+    }
+}
+
 struct GatewaySwitcherSheet: View {
     @ObservedObject var hosts: MultiGatewayStore
     // Catalyst 的呈现控制器通过父级绑定关闭。
     var onClose: (() -> Void)? = nil
+    /// Catalyst 面板内嵌时不要把导航栏交给窗口工具栏，改为面板自带标题栏。
+    var embeddedInPanel: Bool = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var editMode: EditMode = .inactive
@@ -241,6 +276,7 @@ struct GatewaySwitcherSheet: View {
                         .foregroundStyle(Color(uiColor: .secondaryLabel))
                 }
             }
+            .scrollContentBackground(embeddedInPanel ? .hidden : .automatic)
             .environment(\.editMode, $editMode)
             .alert(selectedIDs.count == 1 ? String(localized: "删除主机？") : String(localized: "批量删除主机？"), isPresented: $confirmingDelete) {
                 Button("取消", role: .cancel) {}
@@ -253,6 +289,10 @@ struct GatewaySwitcherSheet: View {
             }
             .navigationTitle("切换主机")
             .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if embeddedInPanel { panelTitleBar }
+            }
+            .toolbar(embeddedInPanel ? .hidden : .visible, for: .navigationBar)
             .macSheetClose { onClose?() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -329,6 +369,7 @@ struct GatewaySwitcherSheet: View {
                 .presentationDetents([.medium])
             }
         }
+        .modifier(PanelChrome(enabled: embeddedInPanel))
         .foregroundStyle(Color(uiColor: .label))
         .tint(Color(uiColor: .label))
         .presentationDetents([.medium, .large])
@@ -341,6 +382,37 @@ struct GatewaySwitcherSheet: View {
             SheetDiagnostics.record("disappeared")
             if SheetDiagnostics.selfTestEnabled { SheetDiagnostics.log.fault("sheet disappeared") }
         }
+    }
+
+    private var panelTitleBar: some View {
+        HStack(spacing: 12) {
+            Button(editMode.isEditing ? String(localized: "完成编辑") : String(localized: "编辑")) {
+                withAnimation {
+                    if editMode.isEditing { selectedIDs.removeAll() }
+                    editMode = editMode.isEditing ? .inactive : .active
+                }
+            }
+            .buttonStyle(.borderless)
+            Spacer(minLength: 0)
+            Text("切换主机").appFont(.headline)
+            Spacer(minLength: 0)
+            if editMode.isEditing, !selectedIDs.isEmpty {
+                Button(selectedIDs.count == 1 ? String(localized: "删除") : String(localized: "批量删除")) {
+                    confirmingDelete = true
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.red)
+            }
+            Button(String(localized: "关闭")) {
+                if let onClose { onClose() } else { dismiss() }
+            }
+            .buttonStyle(.borderless)
+            .keyboardShortcut(.cancelAction)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 48)
+        .background(Color(uiColor: .secondarySystemBackground))
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     private func toggleSelection(_ id: String) {
