@@ -404,6 +404,8 @@ struct GatewaySwitcherSheet: View {
                 .foregroundStyle(.red)
             }
             Button(String(localized: "关闭")) {
+                // 与 .macSheetClose 的按钮保持同一套探针记录，UI 测试据此算关闭耗时。
+                SheetDiagnostics.record("close")
                 if let onClose { onClose() } else { dismiss() }
             }
             .buttonStyle(.borderless)
