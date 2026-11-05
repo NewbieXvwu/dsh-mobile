@@ -96,10 +96,14 @@ final class SheetCloseLatencyUITests: XCTestCase {
             let timeline = probe.label
             let open = try timestamp("appeared", cycle: cycle, timeline: timeline)
                 - timestamp("tap", cycle: cycle, timeline: timeline)
-            let close = try timestamp("disappeared", cycle: cycle, timeline: timeline)
-                - timestamp("close", cycle: cycle, timeline: timeline)
+            // 「点完多久才响应」= close → 面板被撤下（presented=false）；
+            // 从撤下到 onDisappear 还包含 120ms 的退出动画，单独记一条，避免把动画算成卡顿。
+            let dismissed = try timestamp("presented=false", cycle: cycle, timeline: timeline)
+            let disappeared = try timestamp("disappeared", cycle: cycle, timeline: timeline)
+            let close = dismissed - timestamp("close", cycle: cycle, timeline: timeline)
+            let closeAnimation = disappeared - dismissed
             let prefix = cycle == 1 ? "" : "cycle2 "
-            print("METRIC: \(prefix)open=\(open)ms close=\(close)ms probe=\(timeline)")
+            print("METRIC: \(prefix)open=\(open)ms close=\(close)ms closeExit=\(closeAnimation)ms probe=\(timeline)")
             XCTAssertGreaterThanOrEqual(open, 0)
             XCTAssertGreaterThanOrEqual(close, 0)
             // 门槛按"人眼可感知"设定：修复前是秒级（点完等好几秒），现在 CI 实测
@@ -107,6 +111,7 @@ final class SheetCloseLatencyUITests: XCTestCase {
             // 100ms 太贴近 CI 抖动，会让门禁红在噪声上而不是回归上。
             XCTAssertLessThan(open, 300, "第 \(cycle) 轮打开应小于 300ms")
             XCTAssertLessThan(close, 150, "第 \(cycle) 轮关闭应小于 150ms")
+            XCTAssertLessThan(closeAnimation, 600, "第 \(cycle) 轮退出动画不应卡住")
         }
     }
 }
