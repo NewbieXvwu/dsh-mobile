@@ -77,13 +77,18 @@ extension View {
     }
 }
 
-#if !targetEnvironment(macCatalyst)
 enum PanelContext {
     /// 当前内容是否渲染在 Catalyst 的窗口内面板里。
     ///
     /// 用静态状态而不是 EnvironmentKey：宿主 rootView 里注入的 environment
     /// 会被 SwiftUI 的 `.environment(\.self, ...)` 覆盖掉，实测读到的还是默认值。
-    static var isEmbedded: Bool { false }
+    static var isEmbedded: Bool {
+        #if targetEnvironment(macCatalyst)
+        return WindowPane.presented != nil
+        #else
+        return false
+        #endif
+    }
 }
 
 private struct PanelEmbeddedKey: EnvironmentKey {
@@ -161,14 +166,6 @@ extension View {
         modifier(PanelHeaderModifier(title: title, actions: actions))
     }
 }
-
-/// 用自定义 `UIPresentationController` 在窗口内呈现任意 SwiftUI 内容。
-///
-/// 关键点（都是踩过的坑）：
-/// - `animated: false`：走系统过渡会重新引入不可控的解散等待；
-/// - 内容宿主的背景必须显式设成 `.systemBackground` 且 `isOpaque`，否则面板会透出下层窗口；
-/// - 面板边框、圆角、阴影、外部暗化都在 `Panel` 里画，SwiftUI 内容不需要自带这些。
-#endif
 
 #if targetEnvironment(macCatalyst)
 /// 面板呈现者的进程级登记表（泛型类型不能有静态存储属性）。
@@ -364,90 +361,6 @@ enum WindowPane {
 
     /// 关闭动画期间卡片角色已被清空，这里留一份引用给动画用。
     private static weak var cardForAnimation: UIView?
-}
-
-enum PanelContext {
-    /// 当前内容是否渲染在 Catalyst 的窗口内面板里。
-    ///
-    /// 用静态状态而不是 EnvironmentKey：宿主 rootView 里注入的 environment
-    /// 会被 SwiftUI 的 `.environment(\.self, ...)` 覆盖掉，实测读到的还是默认值。
-    static var isEmbedded: Bool { WindowPane.presented != nil }
-}
-
-private struct PanelEmbeddedKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    /// 内容是否被放进 Catalyst 的窗口内面板（而不是系统 sheet）。
-    /// 面板里的卡片自带标题栏，所以内容要按「嵌入」模式渲染。
-    var panelEmbedded: Bool {
-        get { self[PanelEmbeddedKey.self] }
-        set { self[PanelEmbeddedKey.self] = newValue }
-    }
-}
-
-/// 面板卡片顶部的一个动作按钮。
-struct PanelAction {
-    let title: String
-    let prominent: Bool
-    let action: () -> Void
-
-    init(_ title: String, prominent: Bool = false, action: @escaping () -> Void) {
-        self.title = title
-        self.prominent = prominent
-        self.action = action
-    }
-}
-
-/// 面板内卡片自带的标题栏：左边标题、右边动作。
-///
-/// Catalyst 会把 SwiftUI 的导航栏挂到窗口标题栏上，卡片里就只剩内容，
-/// 看起来像「控件和内容分家」。面板模式下一律收起导航栏，改用这条标题栏。
-struct PanelHeader: View {
-    let title: String
-    let actions: [PanelAction]
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text(title)
-                .appFont(.headline)
-                .lineLimit(1)
-            Spacer(minLength: 12)
-            ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
-                Button(action.title, action: action.action)
-                    .foregroundStyle(action.prominent ? Color.accentColor : Color(uiColor: .secondaryLabel))
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 48)
-        .background(Color.primary.opacity(0.06))
-        .overlay(alignment: .bottom) { Divider() }
-    }
-}
-
-private struct PanelHeaderModifier: ViewModifier {
-    let title: String
-    let actions: [PanelAction]
-
-    func body(content: Content) -> some View {
-        if PanelContext.isEmbedded {
-            content
-                .toolbar(.hidden, for: .navigationBar)
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    PanelHeader(title: title, actions: actions)
-                }
-        } else {
-            content
-        }
-    }
-}
-
-extension View {
-    /// 面板模式下把导航栏收进卡片；iOS 上原样不动。
-    func panelHeader(_ title: String, actions: [PanelAction]) -> some View {
-        modifier(PanelHeaderModifier(title: title, actions: actions))
-    }
 }
 
 /// 用自定义 `UIPresentationController` 在窗口内呈现任意 SwiftUI 内容。
