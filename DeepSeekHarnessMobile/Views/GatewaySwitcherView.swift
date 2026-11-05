@@ -136,7 +136,7 @@ private struct PanelChrome: ViewModifier {
     func body(content: Content) -> some View {
         if enabled {
             content
-                .background(Color(uiColor: .systemBackground))
+                .background(Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         } else {
             content
@@ -319,8 +319,10 @@ struct GatewaySwitcherSheet: View {
             }
         }
         .modifier(PanelChrome(enabled: embeddedInPanel))
-        .foregroundStyle(Color(uiColor: .label))
-        .tint(Color(uiColor: .label))
+        // 面板模式下按原生导航栏的观感来：文字用主标签色、按钮用强调色；
+        // 系统 sheet 模式下保持原来的白色工具栏文字。
+        .foregroundStyle(embeddedInPanel ? Color.primary : Color(uiColor: .label))
+        .tint(embeddedInPanel ? Color.accentColor : Color(uiColor: .label))
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
@@ -424,6 +426,7 @@ struct GatewaySwitcherSheet: View {
                 }
             }
             .buttonStyle(.borderless)
+            .foregroundStyle(Color.accentColor)
             Spacer(minLength: 0)
             Text("切换主机").appFont(.headline)
             Spacer(minLength: 0)
@@ -440,11 +443,12 @@ struct GatewaySwitcherSheet: View {
                 if let onClose { onClose() } else { dismiss() }
             }
             .buttonStyle(.borderless)
+            .foregroundStyle(Color.accentColor)
             .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 16)
         .frame(height: 48)
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(Color.primary.opacity(0.06))
         .overlay(alignment: .bottom) { Divider() }
     }
 

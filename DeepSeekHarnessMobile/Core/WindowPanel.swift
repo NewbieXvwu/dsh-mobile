@@ -196,18 +196,33 @@ enum WindowPane {
         card.layer.shadowOpacity = 0.32
         card.layer.shadowRadius = 22
         card.layer.shadowOffset = CGSize(width: 0, height: 10)
-        card.backgroundColor = .systemBackground
+        card.backgroundColor = UIColor(red: 0.12, green: 0.13, blue: 0.16, alpha: 1.0)
+        hosting.view.isOpaque = true
+        hosting.view.backgroundColor = UIColor(red: 0.12, green: 0.13, blue: 0.16, alpha: 1.0)
+        hosting.view.isOpaque = true
+        hosting.view.backgroundColor = UIColor(red: 0.13, green: 0.14, blue: 0.17, alpha: 1.0)
         hosting.view.layer.cornerRadius = 14
         hosting.view.layer.masksToBounds = true
         hosting.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         card.addSubview(hosting.view)
         shade.addSubview(card)
         window.addSubview(shade)
+
         cardView = card
+        cardForAnimation = card
 
         presented = hosting
         overlay = shade
         layout()
+
+        // 进出动画：淡入 + 轻微放大，接近系统 sheet 的观感。
+        // 面板是窗口子视图而不是 modal，所以过渡自己画，不掺系统的 presentation 过渡。
+        shade.alpha = 0
+        card.transform = CGAffineTransform(scaleX: 0.97, y: 0.97)
+        UIView.animate(withDuration: Self.presentDuration, delay: 0, options: [.curveEaseOut]) {
+            shade.alpha = 1
+            card.transform = .identity
+        }
         SheetDiagnostics.log.fault("window-pane-present")
     }
 
@@ -231,6 +246,9 @@ enum WindowPane {
         }
     }
 
+    static let presentDuration: TimeInterval = 0.16
+    static let dismissDuration: TimeInterval = 0.12
+
     static func dismiss() {
         guard let hosting = presented else { return }
         SheetDiagnostics.log.fault("window-pane-dismiss")
@@ -238,8 +256,41 @@ enum WindowPane {
         let shade = overlay
         overlay = nil
         cardView = nil
-        hosting.view.removeFromSuperview()
-        shade?.removeFromSuperview()
+        guard let shade else {
+            hosting.view.removeFromSuperview()
+            return
+        }
+        UIView.animate(withDuration: Self.dismissDuration, delay: 0, options: [.curveEaseIn]) {
+            shade.alpha = 0
+            cardForAnimation?.transform = CGAffineTransform(scaleX: 0.98, y: 0.98)
+        } completion: { _ in
+            hosting.view.removeFromSuperview()
+            shade.removeFromSuperview()
+        }
+    }
+
+    /// 关闭动画期间卡片角色已被清空，这里留一份引用给动画用。
+    private static weak var cardForAnimation: UIView?
+}
+
+enum PanelContext {
+    /// 当前内容是否渲染在 Catalyst 的窗口内面板里。
+    ///
+    /// 用静态状态而不是 EnvironmentKey：宿主 rootView 里注入的 environment
+    /// 会被 SwiftUI 的 `.environment(\.self, ...)` 覆盖掉，实测读到的还是默认值。
+    static var isEmbedded: Bool { WindowPane.presented != nil }
+}
+
+private struct PanelEmbeddedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// 内容是否被放进 Catalyst 的窗口内面板（而不是系统 sheet）。
+    /// 面板里的卡片自带标题栏，所以内容要按「嵌入」模式渲染。
+    var panelEmbedded: Bool {
+        get { self[PanelEmbeddedKey.self] }
+        set { self[PanelEmbeddedKey.self] = newValue }
     }
 }
 
@@ -275,7 +326,11 @@ struct WindowPanel<PanelContent: View>: UIViewControllerRepresentable {
             }
             return
         }
-        let root = AnyView(content().environment(\.self, context.environment))
+        let root = AnyView(
+            content()
+                .environment(\.self, context.environment)
+                .environment(\.panelEmbedded, true)
+        )
         if controller.ownsPanel, let hosting = WindowPane.presented {
             // 不重建 rootView：重建会让 SwiftUI 把内容当成新视图，面板里的
             // onAppear/onDisappear 反复触发，写回状态又推动下一轮更新。
@@ -287,7 +342,7 @@ struct WindowPanel<PanelContent: View>: UIViewControllerRepresentable {
             let hosting = UIHostingController(rootView: root)
             controller.ownsPanel = true
             hosting.preferredContentSize = size
-            hosting.view.backgroundColor = .systemBackground
+            hosting.view.backgroundColor = UIColor(red: 0.13, green: 0.14, blue: 0.17, alpha: 1.0)
             hosting.view.isOpaque = true
             hosting.view.accessibilityIdentifier = WindowPanelRegistry.marker
             WindowPane.present(hosting)

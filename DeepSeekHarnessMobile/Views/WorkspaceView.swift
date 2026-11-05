@@ -204,6 +204,11 @@ struct WorkspaceView: View {
         }
         .task {
             // 仅诊断：把「手动配对」sheet 自动打开，让 dismiss 路径可以被计时。
+            if ProcessInfo.processInfo.arguments.contains("DSH_DIRBROWSER_SELFTEST") {
+                try? await Task.sleep(for: .seconds(2))
+                showsDirectoryBrowser = true
+                return
+            }
             guard SheetDiagnostics.pairingSelfTestEnabled else { return }
             try? await Task.sleep(for: .seconds(2))
             showsManualPairing = true
@@ -956,6 +961,7 @@ private struct DirectoryBrowserSurface: ViewModifier {
 
 private struct DirectoryBrowserSheet: View {
     @EnvironmentObject private var store: AppStore
+    private var embeddedPanel: Bool { PanelContext.isEmbedded }
     @Environment(\.dismiss) private var dismiss
     var onClose: (() -> Void)? = nil
     @State private var creatingPath: String?
@@ -972,6 +978,22 @@ private struct DirectoryBrowserSheet: View {
         }
         .disabled(store.directoryPath == nil || store.directoryIsLoading || store.directoryCreationIsLoading)
         .accessibilityLabel(String(localized: "新建文件夹"))
+    }
+
+    /// 面板模式下卡片自带标题栏：导航栏被摘掉，标题与按钮留在这里。
+    private var panelHeader: some View {
+        HStack(spacing: 12) {
+            newFolderButton
+            Text("选择工作区目录")
+                .appFont(.headline)
+            Spacer()
+            Button("取消") { if let onClose { onClose() } else { dismiss() } }
+                .keyboardShortcut(.cancelAction)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 48)
+        .background(Color.primary.opacity(0.06))
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     var body: some View {
@@ -1037,6 +1059,10 @@ private struct DirectoryBrowserSheet: View {
                 }
                 .navigationTitle("选择工作区目录")
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbar(embeddedPanel ? .hidden : .visible, for: .navigationBar)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if embeddedPanel { panelHeader }
+                }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
