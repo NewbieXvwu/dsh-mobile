@@ -181,8 +181,8 @@ struct WorkspaceView: View {
             sessionList.search(value)
             store.search(value)
         }
-        .sheet(isPresented: $showsDirectoryBrowser) {
-            DirectoryBrowserSheet()
+        .windowPanel(isPresented: $showsDirectoryBrowser, size: CGSize(width: 620, height: 660)) {
+            DirectoryBrowserSheet(onClose: { showsDirectoryBrowser = false })
                 .environmentObject(store)
         }
         .fullScreenCover(isPresented: $showsQRScanner) {
@@ -957,12 +957,30 @@ private struct DirectoryBrowserSurface: ViewModifier {
 private struct DirectoryBrowserSheet: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
+    var onClose: (() -> Void)? = nil
     @State private var creatingPath: String?
     @State private var showsCreateDirectoryPrompt = false
     @State private var newDirectoryName = ""
     @State private var highlightedDirectoryPath: String?
 
+    private var newFolderButton: some View {
+        Button {
+            newDirectoryName = ""
+            showsCreateDirectoryPrompt = true
+        } label: {
+            Image(systemName: "folder.badge.plus")
+        }
+        .disabled(store.directoryPath == nil || store.directoryIsLoading || store.directoryCreationIsLoading)
+        .accessibilityLabel(String(localized: "新建文件夹"))
+    }
+
     var body: some View {
+        PanelShell(
+            title: String(localized: "选择工作区目录"),
+            onClose: onClose ?? { dismiss() },
+            closeLabel: String(localized: "取消"),
+            headerLeading: AnyView(newFolderButton)
+        ) {
         NavigationStack {
             ScrollViewReader { proxy in
                 List {
@@ -1036,7 +1054,7 @@ private struct DirectoryBrowserSheet: View {
                         .disabled(store.directoryPath == nil || store.directoryIsLoading || store.directoryCreationIsLoading)
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("取消") { dismiss() }
+                        Button("取消") { if let onClose { onClose() } else { dismiss() } }
                     }
                 }
                 .onChangeCompat(of: store.createdDirectoryPathToReveal) { _, _ in
@@ -1054,6 +1072,7 @@ private struct DirectoryBrowserSheet: View {
                     }
                 }
             }
+        }
         }
         .presentationDetents([.medium, .large])
         .tint(DSHColor.ocean)

@@ -334,7 +334,8 @@ struct SettingsView: View {
                 }
             )
         }
-        .sheet(isPresented: $showsReleaseNotes) {
+        .windowPanel(isPresented: $showsReleaseNotes, size: CGSize(width: 560, height: 560)) {
+            PanelShell(title: "本版本新功能", onClose: { showsReleaseNotes = false }) {
             NavigationStack {
                 ScrollView {
                     Markdown(releaseInfo?.version == appVersion ? releaseInfo!.notes : "本版本发布说明暂未提供，请查看 GitHub 发布页。")
@@ -352,9 +353,10 @@ struct SettingsView: View {
                     }
                 }
             }
+            }
         }
-        .sheet(isPresented: $showsPrivacyPolicy) {
-            PrivacyPolicySheet()
+        .windowPanel(isPresented: $showsPrivacyPolicy, size: CGSize(width: 560, height: 640)) {
+            PrivacyPolicySheet(onClose: { showsPrivacyPolicy = false })
         }
     }
 }
@@ -488,6 +490,7 @@ struct FontSizeSettingsView: View {
 }
 
 private struct PrivacyPolicySheet: View {
+    var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var isLoading = true
     @State private var loadFailed = false
@@ -496,6 +499,7 @@ private struct PrivacyPolicySheet: View {
     private let url = URL(string: "https://clarklevis1995.github.io/dsh-mobile/privacy/")!
 
     var body: some View {
+        PanelShell(title: "隐私政策", onClose: onClose ?? { dismiss() }) {
         NavigationStack {
             ZStack {
                 PrivacyPolicyWebView(url: url, isLoading: $isLoading, loadFailed: $loadFailed)
@@ -523,9 +527,12 @@ private struct PrivacyPolicySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") { dismiss() }
+                    Button("完成") {
+                        if let onClose { onClose() } else { dismiss() }
+                    }
                 }
             }
+        }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)

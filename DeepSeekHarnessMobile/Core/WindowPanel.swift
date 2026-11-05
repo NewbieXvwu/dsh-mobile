@@ -34,6 +34,32 @@ extension View {
     }
 }
 
+extension View {
+    /// `.sheet(item:)` 的面板版本；`onDismiss` 语义保持一致。
+    @ViewBuilder
+    func windowPanel<Item: Identifiable, PanelContent: View>(
+        item: Binding<Item?>,
+        size: CGSize = CGSize(width: 560, height: 620),
+        onDismiss: (() -> Void)? = nil,
+        @ViewBuilder content: @escaping (Item) -> PanelContent
+    ) -> some View {
+        #if targetEnvironment(macCatalyst)
+        let isPresented = Binding(
+            get: { item.wrappedValue != nil },
+            set: { if !$0 { item.wrappedValue = nil } }
+        )
+        WindowPanel(isPresented: isPresented, size: size) {
+            if let value = item.wrappedValue { content(value) }
+        }
+        .onChangeCompat(of: isPresented.wrappedValue) { _, presented in
+            if !presented { onDismiss?() }
+        }
+        #else
+        sheet(item: item, onDismiss: onDismiss, content: content)
+        #endif
+    }
+}
+
 #if targetEnvironment(macCatalyst)
 /// 用自定义 `UIPresentationController` 在窗口内呈现任意 SwiftUI 内容。
 ///
@@ -113,3 +139,45 @@ struct WindowPanel<PanelContent: View>: UIViewControllerRepresentable {
     }
 }
 #endif
+
+/// 把系统 sheet 的内容放进窗口面板时，内容自带的 `NavigationStack` 工具栏会跑到
+/// 窗口标题栏上（和卡片分离，就是"错位"）。这里统一给面板内内容补一条卡片内标题栏，
+/// 并隐藏原来的导航栏工具栏。
+struct PanelShell<PanelContent: View>: View {
+    let title: String
+    var onClose: (() -> Void)?
+    var closeLabel: String = "完成"
+    var headerLeading: AnyView? = nil
+    @ViewBuilder var content: () -> PanelContent
+
+    var body: some View {
+        #if targetEnvironment(macCatalyst)
+        if WindowPanelLayout.isEmbedded {
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    if let headerLeading { headerLeading }
+                    Text(title).appFont(.headline)
+                    Spacer(minLength: 8)
+                    if let onClose {
+                        Button(closeLabel, action: onClose)
+                            .appFont(.subheadline.weight(.semibold))
+                            .buttonStyle(.plain)
+                            .foregroundStyle(DSHColor.ocean)
+                            .keyboardShortcut(.cancelAction)
+                    }
+                }
+                .padding(.horizontal, 18)
+                .frame(height: 48)
+                .background(Color(uiColor: .secondarySystemBackground))
+                Divider()
+                content()
+                    .toolbar(.hidden, for: .navigationBar)
+            }
+        } else {
+            content()
+        }
+        #else
+        content()
+        #endif
+    }
+}
