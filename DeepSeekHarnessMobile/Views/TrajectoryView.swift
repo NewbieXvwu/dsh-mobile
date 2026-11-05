@@ -69,7 +69,9 @@ struct TrajectoryView: View {
                 }
             }
         }
-        .sheet(item: $selected) { EventDetailSheet(node: $0) }
+        .windowPanel(item: $selected, size: CGSize(width: 620, height: 680)) { node in
+            EventDetailSheet(node: node, onClose: { selected = nil })
+        }
         .task(id: "\(sessionId ?? "none")-\(isActive)") {
             store.setTrajectoryProjectionActive(sessionID: sessionId, isActive: isActive)
         }
@@ -538,6 +540,7 @@ private struct EventDetailSheet: View {
     }
 
     let node: TrajectoryNode
+    var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var tab: Tab = .summary
     @State private var requestTab: RequestTab = .summary
@@ -546,6 +549,7 @@ private struct EventDetailSheet: View {
     @Namespace private var tabIndicator
 
     var body: some View {
+        PanelShell(title: node.title, onClose: onClose ?? { dismiss() }) {
         NavigationStack {
             VStack(spacing: 0) {
                 if node.kind == .request {
@@ -560,7 +564,8 @@ private struct EventDetailSheet: View {
             }
             .navigationTitle(node.title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { if let onClose { onClose() } else { dismiss() } } } }
+        }
         }
         .presentationDetents([.medium, .large])
         .background(.ultraThinMaterial)
