@@ -189,3 +189,40 @@ sheet 更糟。
 CI：`41962533970` 的 `SheetCloseLatencyUITests` 通过（open=87ms/close=11ms、
 cycle2 34/8ms），新纳入的 `EditHostSheetUITests` 因假主机断言位置不对而失败，
 已改到面板内断言后重跑。
+
+### 面板改成窗口级呈现（2026-11-05 深夜，根因）
+
+上一节的 closePanel 只是止血。真正的坑是**呈现者本身挂在 SwiftUI 树里**：
+
+1. `UIViewControllerRepresentable` 的宿主控制器在 SwiftUI 每次重新求值时可能被拆掉重建，
+   UIKit 随即解散它 present 出来的面板。实测时间线：`update(true)` → `present` →
+   **14ms 后** `dismissalTransitionDidEnd(completed: true)`，表现就是"面板一闪而过"。
+2. 我们又在每次 `update` 里 `hosting.rootView = sheet`，视图身份一变，
+   内容的 `onAppear`/`onDisappear` 交替触发；当 `onAppear` 里写回高度状态时，
+   状态写回 → 新一轮 update → 再重建 rootView，形成死循环，实测进程 91.6% CPU、
+   日志里每 60ms 一次 `appeared/disappeared`。
+3. 逐个窗口面板迁移后，某个面板实例的 `update(false)` 还会把**当前**面板一起收掉
+   （全局单槽 + 每个实例都无条件 dismiss）。
+
+现在的做法（`DeepSeekHarnessMobile/Core/WindowPanel.swift`）：
+
+- `WindowPane`：面板作为**窗口上的普通子视图**呈现，不走 `present(_:)`。
+  组件是「暗化层 + 卡片外壳 + UIHostingController.view」，尺寸自己算，
+  强引用保存在进程级静态变量里；关闭就是移出视图层级。
+- 不做控制器包含：作为子控制器插进窗口根导航层级会在
+  `UINavigationController _calculateEdgeInsetsForChildViewController` 里触发
+  SwiftUI Observation 的 SIGSEGV（有崩溃报告佐证）。
+- `WindowPanel.Host.ownsPanel`：每个宿主各自记账，只有呈现过面板的实例才能收面板。
+- 切换主机面板改为命令式 `GatewaySwitcherPanel.show(...)`，由 `.onChangeCompat(of: showsHosts)`
+  驱动，彻底离开 representable 生命周期。
+- `closePanel { ... }` 直接调 `WindowPane.dismiss()`，不再依赖 SwiftUI 重新求值。
+
+验证：
+
+- 本机（`open -g` 后台，前台一直是 ghostty，没有抢焦点）：
+  切换主机面板两轮 open 30/18ms、close 11/10ms；配对面板 open 35ms、close 7–14ms；
+  空闲 CPU 0.0–0.2%（死循环修复前 91.6%）。
+- CI（run `41965842034`，绿）：
+  `METRIC: edit-open=23ms edit-close=19ms`、`METRIC: open=62ms close=48ms`、
+  `METRIC: cycle2 open=29ms close=40ms`，`EditHostSheetUITests` 与
+  `SheetCloseLatencyUITests` 均通过（真实鼠标点击，计时取自应用内探针）。
