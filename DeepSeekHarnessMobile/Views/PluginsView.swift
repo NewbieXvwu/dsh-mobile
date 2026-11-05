@@ -243,7 +243,7 @@ private struct PluginDetailView: View {
         }
         .navigationTitle("插件详情").navigationBarTitleDisplayMode(.inline)
         .windowPanel(item: $selectedEntry, size: CGSize(width: 560, height: 640)) { entry in
-            PluginComponentSheet(entry: entry, onClose: { selectedEntry = nil })
+            PluginComponentSheet(entry: entry, onClose: { closePanel { selectedEntry = nil } })
         }
         .alert("停用移动网关？", isPresented: $confirmGatewayDisable) {
             Button("取消", role: .cancel) {}
@@ -258,7 +258,6 @@ private struct PluginComponentSheet: View {
     var onClose: (() -> Void)? = nil
 
     var body: some View {
-        PanelShell(title: String(localized: "组件详情"), onClose: onClose ?? { dismiss() }) {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -290,7 +289,7 @@ private struct PluginComponentSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { if let onClose { onClose() } else { dismiss() } } } }
         }
-        }
+
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }

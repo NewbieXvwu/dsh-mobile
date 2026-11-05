@@ -196,6 +196,7 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/dd" \
             -scmProvider system \
             -only-testing:DeepSeekHarnessMobileUITests/SheetCloseLatencyUITests \
+            -only-testing:DeepSeekHarnessMobileUITests/EditHostSheetUITests \
             test-without-building \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \

@@ -123,7 +123,7 @@ struct LogExportView: View {
         .windowPanel(item: $editor, size: CGSize(width: 460, height: 480)) { item in
             LogDateTimePicker(title: item.title, isDate: item.isDate, initial: item.value,
                               earliest: earliest ?? .distantPast, isStart: item.isStart,
-                              onClose: { editor = nil }) { value in
+                              onClose: { closePanel { editor = nil } }) { value in
                 if item.isStart { start = value } else { end = value }
                 preset = .custom
             }
@@ -343,7 +343,6 @@ private struct LogDateTimePicker: View {
         Binding(get: { draft }, set: { draft = min(LogExportHour.start(of: $0), latest) })
     }
     var body: some View {
-        PanelShell(title: title, onClose: onClose ?? { dismiss() }, closeLabel: String(localized: "取消")) {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -381,7 +380,7 @@ private struct LogDateTimePicker: View {
                 }
             }
         }
-        }
+
         .presentationDetents([.height(isDate ? 560 : 408), .large])
         .presentationDragIndicator(.visible)
         .logPickerAppearance()

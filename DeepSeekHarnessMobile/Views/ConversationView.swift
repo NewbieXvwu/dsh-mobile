@@ -469,13 +469,13 @@ struct ConversationView: View {
         }
         .windowPanel(item: conversationPreviewBinding, size: CGSize(width: 760, height: 720)) { request in
             WorkspaceFilePreviewLoadingSheet(store: store, request: request,
-                                             onClose: { conversationPreviewBinding.wrappedValue = nil })
+                                             onClose: { closePanel { conversationPreviewBinding.wrappedValue = nil } })
         }
         .windowPanel(isPresented: $showsSessionStats, size: CGSize(width: 560, height: 640)) {
             SessionStatsSheet(
                 snapshot: store.selectedSessionStatsSnapshot,
                 sessionTitle: store.selectedSession?.title ?? String(localized: "session.new.fallback", defaultValue: "新建 DeepSeek Harness"),
-                onClose: { showsSessionStats = false }
+                onClose: { closePanel { showsSessionStats = false } }
             )
         }
     }
@@ -3272,7 +3272,6 @@ private struct SessionStatsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        PanelShell(title: "会话状态", onClose: onClose ?? { dismiss() }) {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -3327,7 +3326,7 @@ private struct SessionStatsSheet: View {
                 }
             }
         }
-        }
+
         .presentationDetents([.medium, .large])
         .background(.regularMaterial)
     }
@@ -5464,7 +5463,7 @@ struct TeamNavigationEntry: View {
         }
         // 面板由稳定容器呈现，不随入口按钮重建而销毁。
         .windowPanel(isPresented: $showsSheet, size: CGSize(width: 560, height: 640)) {
-            TeamContentSheet(onClose: { showsSheet = false }) { member in
+            TeamContentSheet(onClose: { closePanel { showsSheet = false } }) { member in
                 Task { await store.selectTeamMember(member) }
             }.environmentObject(store)
         }
@@ -5763,10 +5762,6 @@ struct TeamContentSheet: View {
     }
 
     var body: some View {
-        PanelShell(
-            title: store.teamSnapshot.isTeam ? String(localized: "智能体团队") : String(localized: "子智能体"),
-            onClose: onClose ?? { dismiss() }
-        ) {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -5818,7 +5813,7 @@ struct TeamContentSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        }
+
     }
 
     private func taskCard(_ task: MobileTeamTask) -> some View {

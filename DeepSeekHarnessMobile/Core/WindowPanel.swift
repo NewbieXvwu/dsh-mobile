@@ -14,6 +14,22 @@ enum WindowPanelLayout {
     #endif
 }
 
+/// 关闭当前窗口面板。
+///
+/// Catalyst 上面板覆盖窗口期间，SwiftUI 可能推迟下层视图的重新求值，
+/// 于是「把绑定置回 false」并不保证 `updateUIViewController` 会马上被叫到。
+/// 关闭动作统一走这里：先改状态（iOS/后续渲染仍需要），再直接收掉呈现层。
+func closePanel(_ reset: @escaping () -> Void) {
+    reset()
+    #if targetEnvironment(macCatalyst)
+    WindowPanelRegistry.activePresenter?.dismiss(animated: false)
+    WindowPanelRegistry.activePresenter = nil
+    for panel in WindowPanelRegistry.presentedPanels() {
+        panel.dismiss(animated: false)
+    }
+    #endif
+}
+
 extension View {
     /// 统一的弹层入口：iOS 走系统 sheet，Catalyst 走窗口内面板。
     ///
@@ -61,6 +77,40 @@ extension View {
 }
 
 #if targetEnvironment(macCatalyst)
+/// 面板呈现者的进程级登记表（泛型类型不能有静态存储属性）。
+enum WindowPanelRegistry {
+    static weak var activePresenter: UIViewController?
+    /// 面板呈现层视图的固定标识：面板覆盖窗口期间 SwiftUI 可能不再驱动
+    /// representable，关闭时只能自己到视图控制器树里把它找出来。
+    static let marker = "dsh-window-panel"
+
+    static func presentedPanels() -> [UIViewController] {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let windows: [UIWindow] = scenes.flatMap { $0.windows }
+        let window = windows.first(where: { $0.isKeyWindow }) ?? windows.first
+        guard let root = window?.rootViewController else { return [] }
+        var found: [UIViewController] = []
+        var queue: [UIViewController] = [root]
+        var visited = 0
+        while let vc = queue.popLast(), visited < 200 {
+            visited += 1
+            if let presented = vc.presentedViewController {
+                queue.append(presented)
+                if presented.view.accessibilityIdentifier == marker { found.append(presented) }
+            }
+            queue.append(contentsOf: vc.children)
+            // 自定义呈现把面板挂在 presenter 的 presentedViewController 上，
+            // 继续沿 children/presented 两条链走，能覆盖嵌套容器。
+            if let nav = vc as? UINavigationController { queue.append(contentsOf: nav.viewControllers) }
+            if let tab = vc as? UITabBarController, let tabs = tab.viewControllers {
+                queue.append(contentsOf: tabs)
+            }
+        }
+        return found
+    }
+}
+
+
 /// 用自定义 `UIPresentationController` 在窗口内呈现任意 SwiftUI 内容。
 ///
 /// 关键点（都是踩过的坑）：
@@ -74,8 +124,21 @@ struct WindowPanel<PanelContent: View>: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> Presenter { Presenter() }
 
+    static func dismantleUIViewController(_ controller: Presenter, coordinator: ()) {
+        controller.dismiss(animated: false)
+        if activePresenter === controller { activePresenter = nil }
+    }
+
+    /// 面板的呈现者可能因为 SwiftUI 重新求值而换掉；保留最后一次呈现的引用，
+    /// 这样即使绑定由旧实例驱动，关闭请求也一定能把面板收掉。
+    static var activePresenter: Presenter? {
+        get { WindowPanelRegistry.activePresenter as? Presenter }
+        set { WindowPanelRegistry.activePresenter = newValue }
+    }
+
     func updateUIViewController(_ controller: Presenter, context: Context) {
         if isPresented {
+            Self.activePresenter = controller
             let root = AnyView(content().environment(\.self, context.environment))
             if let hosting = controller.presentedViewController as? UIHostingController<AnyView> {
                 hosting.rootView = root
@@ -88,11 +151,22 @@ struct WindowPanel<PanelContent: View>: UIViewControllerRepresentable {
                 hosting.preferredContentSize = size
                 hosting.view.backgroundColor = .systemBackground
                 hosting.view.isOpaque = true
+                hosting.view.accessibilityIdentifier = WindowPanelRegistry.marker
                 controller.present(hosting, animated: false)
             }
             controller.presentedViewController?.presentationController?.containerView?.setNeedsLayout()
-        } else if controller.presentedViewController != nil {
-            controller.dismiss(animated: false)
+        } else {
+            var dismissed = false
+            if controller.presentedViewController != nil {
+                controller.dismiss(animated: false)
+                dismissed = true
+            }
+            if let orphan = Self.activePresenter, orphan !== controller,
+               orphan.presentedViewController != nil {
+                orphan.dismiss(animated: false)
+                dismissed = true
+            }
+            if dismissed, Self.activePresenter === controller { Self.activePresenter = nil }
         }
     }
 
@@ -140,44 +214,3 @@ struct WindowPanel<PanelContent: View>: UIViewControllerRepresentable {
 }
 #endif
 
-/// 把系统 sheet 的内容放进窗口面板时，内容自带的 `NavigationStack` 工具栏会跑到
-/// 窗口标题栏上（和卡片分离，就是"错位"）。这里统一给面板内内容补一条卡片内标题栏，
-/// 并隐藏原来的导航栏工具栏。
-struct PanelShell<PanelContent: View>: View {
-    let title: String
-    var onClose: (() -> Void)?
-    var closeLabel: String = "完成"
-    var headerLeading: AnyView? = nil
-    @ViewBuilder var content: () -> PanelContent
-
-    var body: some View {
-        #if targetEnvironment(macCatalyst)
-        if WindowPanelLayout.isEmbedded {
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    if let headerLeading { headerLeading }
-                    Text(title).appFont(.headline)
-                    Spacer(minLength: 8)
-                    if let onClose {
-                        Button(closeLabel, action: onClose)
-                            .appFont(.subheadline.weight(.semibold))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(DSHColor.ocean)
-                            .keyboardShortcut(.cancelAction)
-                    }
-                }
-                .padding(.horizontal, 18)
-                .frame(height: 48)
-                .background(Color(uiColor: .secondarySystemBackground))
-                Divider()
-                content()
-                    .toolbar(.hidden, for: .navigationBar)
-            }
-        } else {
-            content()
-        }
-        #else
-        content()
-        #endif
-    }
-}

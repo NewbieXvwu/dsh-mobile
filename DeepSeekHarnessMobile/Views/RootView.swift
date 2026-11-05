@@ -333,7 +333,7 @@ private struct ScheduledTasksView: View {
 
     @ViewBuilder
     private func scheduledTaskEditor(_ task: ScheduledTask) -> some View {
-        ScheduledTaskEditSheet(task: task, store: store, onClose: { editingTask = nil })
+        ScheduledTaskEditSheet(task: task, store: store, onClose: { closePanel { editingTask = nil } })
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
     }
@@ -1040,7 +1040,7 @@ private struct ConversationNavigationShell<Content: View>: View {
             }
             .windowPanel(item: $workspaceFilesPresentation, size: CGSize(width: 680, height: 700), onDismiss: { store.conversationDirectoryPath = nil }) { request in
                 WorkspaceFilesSheet(store: store, sessionID: request.sessionID, initialPath: request.initialPath,
-                                    onClose: { workspaceFilesPresentation = nil })
+                                    onClose: { closePanel { workspaceFilesPresentation = nil } })
             }
     }
 
@@ -1134,7 +1134,6 @@ private struct WorkspaceFilesSheet: View {
     @State private var downloadedPaths: Set<String> = []
 
     var body: some View {
-        PanelShell(title: String(localized: "工作区文件"), onClose: onClose ?? { dismiss() }) {
         NavigationStack {
             Group {
                 if store.workspaceFilesAreLoading && store.workspaceFileEntries.isEmpty {
@@ -1195,7 +1194,7 @@ private struct WorkspaceFilesSheet: View {
                 }
             }
         }
-        }
+
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task(id: sessionID) {
@@ -1234,7 +1233,7 @@ private struct WorkspaceFilesSheet: View {
         WorkspaceFilePreviewLoadingSheet(
             store: store,
             request: request,
-            onClose: { previewBinding.wrappedValue = nil },
+            onClose: { closePanel { previewBinding.wrappedValue = nil } },
             onSaved: {
                 if request.sessionID == sessionID,
                    let file = store.completedWorkspaceFile {

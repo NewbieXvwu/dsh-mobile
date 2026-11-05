@@ -334,8 +334,16 @@ struct SettingsView: View {
                 }
             )
         }
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("DSH_RELEASE_NOTES_SELFTEST") else { return }
+            try? await Task.sleep(for: .seconds(2))
+            SheetDiagnostics.record("notes-selftest-open-requested")
+            showsReleaseNotes = true
+            try? await Task.sleep(for: .seconds(5))
+            SheetDiagnostics.record("notes-selftest-close-requested")
+            closePanel { showsReleaseNotes = false }
+        }
         .windowPanel(isPresented: $showsReleaseNotes, size: CGSize(width: 560, height: 560)) {
-            PanelShell(title: "本版本新功能", onClose: { showsReleaseNotes = false }) {
             NavigationStack {
                 ScrollView {
                     Markdown(releaseInfo?.version == appVersion ? releaseInfo!.notes : "本版本发布说明暂未提供，请查看 GitHub 发布页。")
@@ -346,17 +354,17 @@ struct SettingsView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("完成") { showsReleaseNotes = false }
+                        Button("完成") { closePanel { showsReleaseNotes = false } }
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("GitHub 发布页") { openRelease("dsh-mobile", version: nil) }
                     }
                 }
             }
-            }
+
         }
         .windowPanel(isPresented: $showsPrivacyPolicy, size: CGSize(width: 560, height: 640)) {
-            PrivacyPolicySheet(onClose: { showsPrivacyPolicy = false })
+            PrivacyPolicySheet(onClose: { closePanel { showsPrivacyPolicy = false } })
         }
     }
 }
@@ -499,7 +507,6 @@ private struct PrivacyPolicySheet: View {
     private let url = URL(string: "https://clarklevis1995.github.io/dsh-mobile/privacy/")!
 
     var body: some View {
-        PanelShell(title: "隐私政策", onClose: onClose ?? { dismiss() }) {
         NavigationStack {
             ZStack {
                 PrivacyPolicyWebView(url: url, isLoading: $isLoading, loadFailed: $loadFailed)
@@ -533,7 +540,7 @@ private struct PrivacyPolicySheet: View {
                 }
             }
         }
-        }
+
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }

@@ -182,7 +182,7 @@ struct WorkspaceView: View {
             store.search(value)
         }
         .windowPanel(isPresented: $showsDirectoryBrowser, size: CGSize(width: 620, height: 660)) {
-            DirectoryBrowserSheet(onClose: { showsDirectoryBrowser = false })
+            DirectoryBrowserSheet(onClose: { closePanel { showsDirectoryBrowser = false } })
                 .environmentObject(store)
         }
         .fullScreenCover(isPresented: $showsQRScanner) {
@@ -198,7 +198,7 @@ struct WorkspaceView: View {
         .windowPanel(isPresented: $showsManualPairing, size: CGSize(width: 560, height: 620)) {
             ManualGatewayPairingSheet(
                 gateway: hosts.pairingStore?.gateway ?? store.gateway,
-                onClose: { showsManualPairing = false }
+                onClose: { closePanel { showsManualPairing = false } }
             )
             .environmentObject(store)
         }
@@ -975,12 +975,6 @@ private struct DirectoryBrowserSheet: View {
     }
 
     var body: some View {
-        PanelShell(
-            title: String(localized: "选择工作区目录"),
-            onClose: onClose ?? { dismiss() },
-            closeLabel: String(localized: "取消"),
-            headerLeading: AnyView(newFolderButton)
-        ) {
         NavigationStack {
             ScrollViewReader { proxy in
                 List {
@@ -1073,7 +1067,7 @@ private struct DirectoryBrowserSheet: View {
                 }
             }
         }
-        }
+
         .presentationDetents([.medium, .large])
         .tint(DSHColor.ocean)
         .background { Color(uiColor: .systemGroupedBackground).ignoresSafeArea() }
@@ -1085,7 +1079,7 @@ private struct DirectoryBrowserSheet: View {
         .onChangeCompat(of: store.selectedWorkspaceId) { _, _ in
             guard let creatingPath,
                   store.activeWorkspace?.path == creatingPath else { return }
-            dismiss()
+            if let onClose { onClose() } else { dismiss() }
         }
         .alert("新建文件夹", isPresented: $showsCreateDirectoryPrompt) {
             TextField("文件夹名称", text: $newDirectoryName)

@@ -352,7 +352,7 @@ struct TailscaleTunnelSettingsView: View {
             if scenePhase == .active { await tunnel.refreshAfterReturningToApp() }
         }
         .windowPanel(item: $editingAccount, size: CGSize(width: 460, height: 240)) { account in
-            TailscaleAccountEditor(title: "重命名", name: account.name, onClose: { editingAccount = nil }) { name in
+            TailscaleAccountEditor(title: "重命名", name: account.name, onClose: { closePanel { editingAccount = nil } }) { name in
                 settings.renameAccount(account.id, name: name)
             }
         }
@@ -625,7 +625,6 @@ private struct TailscaleAccountEditor: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        PanelShell(title: String(localized: "重命名"), onClose: onClose ?? { dismiss() }, closeLabel: String(localized: "取消")) {
         NavigationStack {
             Form {
                 TextField("账号备注（可选）", text: $name)
@@ -645,7 +644,7 @@ private struct TailscaleAccountEditor: View {
                 }
             }
         }
-        }
+
     }
 }
 
