@@ -170,6 +170,7 @@ enum WindowPane {
     /// 强持有：面板只是贴在窗口上的普通子视图，没有父控制器帮忙保活。
     static var presented: UIHostingController<AnyView>?
     static var overlay: UIView?
+    static var cardView: UIView?
 
     static func keyWindow() -> UIWindow? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -181,17 +182,28 @@ enum WindowPane {
         guard let window = keyWindow(), let root = window.rootViewController else { return }
         let shade = UIView(frame: window.bounds)
         shade.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        shade.backgroundColor = UIColor.black.withAlphaComponent(0.28)
+        shade.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         shade.accessibilityViewIsModal = true
         shade.accessibilityIdentifier = WindowPanelRegistry.marker
 
         // 只把宿主视图贴上去，不做控制器包含：作为子控制器插进窗口根导航层级时，
         // UIKit 会在 `_calculateEdgeInsetsForChildViewController` 里踩到 SwiftUI Observation 崩溃。
         _ = root
+        // 卡片外壳：圆角+阴影分离到两层，圆角裁剪在里面那层做。
+        let card = UIView(frame: .zero)
+        card.layer.cornerRadius = 14
+        card.layer.shadowColor = UIColor.black.cgColor
+        card.layer.shadowOpacity = 0.32
+        card.layer.shadowRadius = 22
+        card.layer.shadowOffset = CGSize(width: 0, height: 10)
+        card.backgroundColor = .systemBackground
         hosting.view.layer.cornerRadius = 14
         hosting.view.layer.masksToBounds = true
-        shade.addSubview(hosting.view)
+        hosting.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        card.addSubview(hosting.view)
+        shade.addSubview(card)
         window.addSubview(shade)
+        cardView = card
 
         presented = hosting
         overlay = shade
@@ -205,8 +217,10 @@ enum WindowPane {
         let width = min(560, bounds.width - 48)
         let wanted = hosting.preferredContentSize.height
         let height = min(max(216, wanted > 0 ? wanted : 560), bounds.height - 48)
-        hosting.view.frame = CGRect(x: bounds.midX - width / 2, y: bounds.midY - height / 2,
-                                    width: width, height: height)
+        let frame = CGRect(x: bounds.midX - width / 2, y: bounds.midY - height / 2,
+                           width: width, height: height)
+        (cardView ?? hosting.view).frame = frame
+        hosting.view.frame = (cardView ?? hosting.view).bounds
     }
 
     static func resize(height: CGFloat) {
@@ -223,6 +237,7 @@ enum WindowPane {
         presented = nil
         let shade = overlay
         overlay = nil
+        cardView = nil
         hosting.view.removeFromSuperview()
         shade?.removeFromSuperview()
     }
